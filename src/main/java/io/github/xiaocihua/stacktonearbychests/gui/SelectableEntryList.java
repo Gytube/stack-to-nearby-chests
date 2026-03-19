@@ -1,270 +1,216 @@
 package io.github.xiaocihua.stacktonearbychests.gui;
 
-import io.github.cottonmc.cotton.gui.GuiDescription;
-import io.github.cottonmc.cotton.gui.client.BackgroundPainter;
-import io.github.cottonmc.cotton.gui.client.ScreenDrawing;
-import io.github.cottonmc.cotton.gui.widget.WListPanel;
-import io.github.cottonmc.cotton.gui.widget.WScrollBar;
-import io.github.cottonmc.cotton.gui.widget.WWidget;
-import io.github.cottonmc.cotton.gui.widget.data.Axis;
-import io.github.cottonmc.cotton.gui.widget.data.InputResult;
-import io.github.cottonmc.cotton.gui.widget.data.Texture;
-import juuxel.libninepatch.NinePatch;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.narration.NarrationElementOutput;
 
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static io.github.xiaocihua.stacktonearbychests.ModOptions.MOD_ID;
-
 /**
- * Copy from {@link WListPanel}.
+ * Liste scrollable avec sélection multiple.
+ * Remplace SelectableEntryList (LibGui WListPanel + WClippedPanel).
  */
-public class SelectableEntryList<D> extends WClippedPanelCustom {
-	/**
-	 * The widgets whose host hasn't been set yet.
-	 */
-	private final List<Entry<D>> requiresHost = new ArrayList<>();
-	private final List<D> selectedData = new ArrayList<>();
-	/**
-	 * The list of data that this list represents.
-	 */
-	protected List<D> data;
-	/**
-	 * The supplier of new empty widgets.
-	 */
-	protected Function<D, Entry<D>> supplier;
-	protected HashMap<D, Entry<D>> configured = new HashMap<>();
-	protected List<Entry<D>> unconfigured = new ArrayList<>();
-	/**
-	 * The height of each child cell.
-	 */
-	protected int cellHeight = 20;
-	protected int margin = 0;
-	/**
-	 * The scroll bar of this list.
-	 */
-	protected WScrollBar scrollBar = new WScrollBarCustom(Axis.VERTICAL);
-	private int lastScroll = -1;
+public class SelectableEntryList<D> extends AbstractWidget {
 
-	private Optional<Consumer<List<D>>> changedListener = Optional.empty();
+    private static final int CELL_HEIGHT    = 20;
+    private static final int SCROLLBAR_W    = 8;
+    private static final int SCROLL_SPEED   = 3;
 
-	public SelectableEntryList(Function<D, Entry<D>> supplier) {
-		this(Collections.emptyList(), supplier);
-	}
+    private final Function<D, Entry<D>> supplier;
+    private List<D> data = new ArrayList<>();
+    private final List<D> selectedData = new ArrayList<>();
+    private final Map<D, Entry<D>> configured = new HashMap<>();
 
-	public SelectableEntryList(Collection<D> data, Function<D, Entry<D>> supplier) {
-		this.supplier = supplier;
-		scrollBar.setParent(this);
-		this.data = new ArrayList<>(data);
-	}
+    private int scrollOffset = 0;
+    private Optional<Consumer<List<D>>> changedListener = Optional.empty();
 
-	public void addData(Collection<D> data) {
-		this.data.addAll(data);
-		this.data = this.data.stream().distinct().collect(Collectors.toList());
-		onChanged();
-		layout();
-	}
+    // ── Constructeurs ────────────────────────────────────────────────────────────
 
-	public void setData(List<D> data) {
-		this.data = data;
-		onChanged();
-		layout();
-	}
+    public SelectableEntryList(Function<D, Entry<D>> supplier) {
+        this(Collections.emptyList(), supplier);
+    }
 
-	public List<D> getSelectedData() {
-		return selectedData;
-	}
+    public SelectableEntryList(Collection<D> data, Function<D, Entry<D>> supplier) {
+        super(0, 0, 0, 0, net.minecraft.network.chat.Component.empty());
+        this.supplier = supplier;
+        this.data = new ArrayList<>(data);
+    }
 
-	public void removeSelected() {
-		data.removeAll(selectedData);
-		onChanged();
-		configured.clear();
-		unconfigured.clear();
-		selectedData.clear();
-		layout();
-	}
+    // ── Données ──────────────────────────────────────────────────────────────────
 
-	public SelectableEntryList<D> setChangedListener(Consumer<List<D>> changedListener) {
-		this.changedListener = Optional.ofNullable(changedListener);
-		return this;
-	}
+    public void addData(Collection<D> newData) {
+        this.data.addAll(newData);
+        this.data = this.data.stream().distinct().collect(Collectors.toList());
+        onChanged();
+    }
 
-	private void onChanged() {
-		changedListener.ifPresent(listener -> listener.accept(this.data));
-	}
+    public void setData(List<D> data) {
+        this.data = new ArrayList<>(data);
+        scrollOffset = 0;
+        configured.clear();
+        onChanged();
+    }
 
-	@Environment(EnvType.CLIENT)
-	@Override
-	public void paint(DrawContext context, int x, int y, int mouseX, int mouseY) {
-		ScreenDrawing.coloredRect(context, x, y, this.width, this.height, 0xFF_262626);
+    public List<D> getSelectedData() { return selectedData; }
 
-		if (scrollBar.getValue() != lastScroll) {
-			layout();
-			lastScroll = scrollBar.getValue();
-		}
+    public void removeSelected() {
+        data.removeAll(selectedData);
+        configured.keySet().removeAll(selectedData);
+        selectedData.clear();
+        onChanged();
+    }
 
-		super.paint(context, x, y, mouseX, mouseY);
-	}
+    public SelectableEntryList<D> setChangedListener(Consumer<List<D>> listener) {
+        this.changedListener = Optional.ofNullable(listener);
+        return this;
+    }
 
-	private Entry<D> createChild(D d) {
-		Entry<D> child = supplier.apply(d);
-		child.setParent(this);
-		child.setParentList(this);
-		// Set up the widget's host
-		if (host != null) {
-			// setHost instead of validate since we cannot have independent validations
-			child.setHost(host);
-		} else {
-			requiresHost.add(child);
-		}
-		return child;
-	}
+    private void onChanged() {
+        changedListener.ifPresent(l -> l.accept(data));
+    }
 
-	@Override
-	public void validate(GuiDescription c) {
-		super.validate(c);
-		setRequiredHosts(c);
-	}
+    public void setSize(int w, int h) {
+        this.width  = w;
+        this.height = h;
+    }
 
-	@Override
-	public void setHost(GuiDescription host) {
-		super.setHost(host);
-		setRequiredHosts(host);
-	}
+    // ── Rendu ────────────────────────────────────────────────────────────────────
 
-	private void setRequiredHosts(GuiDescription host) {
-		for (Entry<D> widget : requiresHost) {
-			widget.setHost(host);
-		}
-		requiresHost.clear();
-	}
+    @Override
+    public void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        int x = getX(); int y = getY();
 
-	@Override
-	public void layout() {
-		children.clear();
-		children.add(scrollBar);
-		scrollBar.setLocation(this.width - scrollBar.getWidth(), 0);
-		scrollBar.setSize(8, this.height);
+        // Fond
+        graphics.fill(x, y, x + width, y + height, 0xFF_262626);
 
-		//super.layout();
+        // Scissor (clipping)
+        graphics.enableScissor(x, y, x + width, y + height);
 
-		//System.out.println("Validating");
+        int cellW    = width - SCROLLBAR_W;
+        int visible  = visibleCells();
+        int startIdx = Math.max(0, Math.min(scrollOffset, Math.max(0, data.size() - visible)));
 
-		int layoutHeight = this.getHeight() - (margin * 2);
-		int cellsHigh = Math.max((layoutHeight + margin) / (cellHeight + margin), 1); // At least one cell is always visible
+        for (int i = 0; i < visible; i++) {
+            int idx = startIdx + i;
+            if (idx >= data.size()) break;
+            D d = data.get(idx);
+            Entry<D> entry = configured.computeIfAbsent(d, supplier);
+            entry.setParentList(this);
+            entry.width  = cellW;
+            entry.height = CELL_HEIGHT;
+            entry.setPosition(x, y + i * CELL_HEIGHT);
+            entry.render(graphics, mouseX, mouseY, partialTick);
+        }
 
-		//System.out.println("Adding children...");
+        graphics.disableScissor();
 
-		//this.children.clear();
-		//this.children.add(scrollBar);
-		//scrollBar.setLocation(this.width-scrollBar.getWidth(), 0);
-		//scrollBar.setSize(8, this.height);
+        // Scrollbar
+        drawScrollbar(graphics, x + cellW, y);
+    }
 
-		//Fix up the scrollbar handle and track metrics
-		scrollBar.setWindow(cellsHigh);
-		scrollBar.setMaxValue(data.size());
-		int scrollOffset = scrollBar.getValue();
-		//System.out.println(scrollOffset);
+    private void drawScrollbar(GuiGraphics g, int x, int y) {
+        g.fill(x, y, x + SCROLLBAR_W, y + height, 0xFF_262626);
+        if (data.size() <= visibleCells()) return;
 
-		int presentCells = Math.min(data.size() - scrollOffset, cellsHigh);
+        float ratio      = (float) visibleCells() / data.size();
+        int handleH      = Math.max(6, (int) (height * ratio));
+        float scrollRatio = (float) scrollOffset / Math.max(1, data.size() - visibleCells());
+        int handleY      = y + (int) ((height - handleH) * scrollRatio);
 
-		if (presentCells > 0) {
-			for (int i = 0; i < presentCells; i++) {
-				int index = i + scrollOffset;
-				if (index >= data.size()) break;
-				if (index < 0) continue; //THIS IS A THING THAT IS HAPPENING >:(
-				D d = data.get(index);
-				Entry<D> w = configured.get(d);
-				if (w == null) {
-					if (unconfigured.isEmpty()) {
-						w = createChild(d);
-					} else {
-						w = unconfigured.remove(0);
-					}
-					configured.put(d, w);
-				}
+        g.fill(x + 1, handleY, x + SCROLLBAR_W - 1, handleY + handleH, 0xFF_515151);
+    }
 
-				//At this point, w is nonnull and configured by d
-				if (w.canResize()) {
-					w.setSize(this.width - (margin * 2) - scrollBar.getWidth(), cellHeight);
-				}
-				w.setLocation(margin, margin + ((cellHeight + margin) * i));
-				this.children.add(w);
-			}
-		}
+    private int visibleCells() {
+        return Math.max(1, height / CELL_HEIGHT);
+    }
 
-		//System.out.println("Children: "+children.size());
-	}
+    // ── Interactions ─────────────────────────────────────────────────────────────
 
-	@Override
-	public InputResult onMouseScroll(int x, int y, double horizontalAmount, double verticalAmount) {
-		return scrollBar.onMouseScroll(0, 0, horizontalAmount, verticalAmount);
-	}
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (!isMouseOver(mouseX, mouseY)) return false;
 
-	public void select(D data) {
-		this.selectedData.add(data);
-		layout();
-	}
+        int x = getX(); int y = getY();
+        int cellW   = width - SCROLLBAR_W;
+        int visible = visibleCells();
+        int startIdx = Math.max(0, Math.min(scrollOffset, Math.max(0, data.size() - visible)));
 
-	public void unSelect(D data) {
-		this.selectedData.remove(data);
-		layout();
-	}
+        for (int i = 0; i < visible; i++) {
+            int idx = startIdx + i;
+            if (idx >= data.size()) break;
+            int entryY = y + i * CELL_HEIGHT;
+            if (mouseX >= x && mouseX < x + cellW && mouseY >= entryY && mouseY < entryY + CELL_HEIGHT) {
+                D d = data.get(idx);
+                Entry<D> entry = configured.computeIfAbsent(d, supplier);
+                entry.onClick();
+                return true;
+            }
+        }
+        return false;
+    }
 
-	public static abstract class Entry<D> extends WWidget {
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (!isMouseOver(mouseX, mouseY)) return false;
+        scrollOffset = Math.max(0, Math.min(scrollOffset - (int) scrollY * SCROLL_SPEED,
+                Math.max(0, data.size() - visibleCells())));
+        return true;
+    }
 
-		protected static final int TEXT_COLOR = 0xFF_F5F5F5;
-		private static final BackgroundPainter UNSELECTED = BackgroundPainter.createNinePatch(Identifier.of(MOD_ID, "textures/background_dark.png"));
-		private static final BackgroundPainter SELECTED = BackgroundPainter.createNinePatch(new Texture(Identifier.of(MOD_ID, "textures/background_dark_selected.png")),
-				builder -> builder.mode(NinePatch.Mode.STRETCHING).cornerSize(4).cornerUv(0.25f));
-		protected Optional<SelectableEntryList<D>> parentList = Optional.empty();
-		protected boolean isSelected = false;
+    @Override
+    protected void updateWidgetNarration(NarrationElementOutput output) {
+        defaultButtonNarrationText(output);
+    }
 
-		protected D data;
+    // ── Entry ────────────────────────────────────────────────────────────────────
 
-		public Entry(D data) {
-			this.data = data;
-		}
+    public static abstract class Entry<D> {
 
-		public D getData() {
-			return data;
-		}
+        protected static final int TEXT_COLOR = 0xFF_F5F5F5;
 
-		public void setParentList(SelectableEntryList<D> parentList) {
-			this.parentList = Optional.ofNullable(parentList);
-		}
+        protected int width;
+        protected int height;
+        private int x;
+        private int y;
 
-		@Override
-		public InputResult onClick(Click click, boolean doubled) {
-			this.isSelected = !this.isSelected;
-			if (isSelected) {
-				parentList.ifPresent(parent -> parent.select(data));
-			} else {
-				parentList.ifPresent(parent -> parent.unSelect(data));
-			}
-			return InputResult.PROCESSED;
-		}
+        protected D data;
+        protected boolean isSelected = false;
+        private Optional<SelectableEntryList<D>> parentList = Optional.empty();
 
-		@Override
-		public void paint(DrawContext context, int x, int y, int mouseX, int mouseY) {
-			if (isSelected) {
-				SELECTED.paintBackground(context, x, y, this);
-			} else {
-				UNSELECTED.paintBackground(context, x, y, this);
-			}
+        public Entry(D data) {
+            this.data = data;
+        }
 
-		}
+        public D getData() { return data; }
 
-		@Override
-		public boolean canResize() {
-			return true;
-		}
-	}
+        public void setPosition(int x, int y) { this.x = x; this.y = y; }
+        public int getX() { return x; }
+        public int getY() { return y; }
+
+        public void setParentList(SelectableEntryList<D> list) {
+            this.parentList = Optional.of(list);
+        }
+
+        public void onClick() {
+            isSelected = !isSelected;
+            if (isSelected) parentList.ifPresent(p -> p.selectedData.add(data));
+            else            parentList.ifPresent(p -> p.selectedData.remove(data));
+        }
+
+        /** Appelé par la liste — dessine le fond puis délègue à render(). */
+        public final void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+            // Fond sélection
+            int bg = isSelected ? 0xFF_3A3A5C : 0xFF_1E1E1E;
+            graphics.fill(x, y, x + width, y + height, bg);
+            // Contenu spécifique à la sous-classe
+            render(graphics, x, y, mouseX, mouseY);
+        }
+
+        /** Dessiner le contenu de l'entrée (icône, texte…). */
+        public abstract void render(GuiGraphics graphics, int x, int y, int mouseX, int mouseY);
+    }
 }

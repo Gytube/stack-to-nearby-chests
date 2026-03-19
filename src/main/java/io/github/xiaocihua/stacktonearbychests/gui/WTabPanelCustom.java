@@ -1,385 +1,181 @@
 package io.github.xiaocihua.stacktonearbychests.gui;
 
-import io.github.cottonmc.cotton.gui.client.BackgroundPainter;
-import io.github.cottonmc.cotton.gui.client.ScreenDrawing;
-import io.github.cottonmc.cotton.gui.impl.client.NarrationMessages;
-import io.github.cottonmc.cotton.gui.widget.*;
-import io.github.cottonmc.cotton.gui.widget.data.Axis;
-import io.github.cottonmc.cotton.gui.widget.data.HorizontalAlignment;
-import io.github.cottonmc.cotton.gui.widget.data.InputResult;
-import io.github.cottonmc.cotton.gui.widget.data.Texture;
-import io.github.cottonmc.cotton.gui.widget.icon.Icon;
-import io.github.xiaocihua.stacktonearbychests.ModOptions;
-import juuxel.libninepatch.NinePatch;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.narration.NarrationMessageBuilder;
-import net.minecraft.client.gui.screen.narration.NarrationPart;
-import net.minecraft.client.input.KeyInput;
-import net.minecraft.client.input.MouseInput;
-import net.minecraft.client.sound.PositionedSoundInstance;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.Style;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.narration.NarrationElementOutput;
+import net.minecraft.client.sounds.SoundManager;
+import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 import java.util.function.Consumer;
 
 /**
- * Copy from {@link WTabPanel}
+ * Panneau à onglets vanilla.
+ * Remplace WTabPanelCustom (LibGui WTabPanel).
  */
-public class WTabPanelCustom extends WPanel {
-    private static final int TAB_PADDING = 0;
-    private static final int TAB_WIDTH = 28;
-    private static final int TAB_HEIGHT = 16;
-    private static final int ICON_SIZE = 16;
-    private final WBox tabRibbon = new WBox(Axis.HORIZONTAL).setSpacing(1);
-    private final List<WTab> tabWidgets = new ArrayList<>();
-    private final WCardPanel mainPanel = new WCardPanel();
+public class WTabPanelCustom extends AbstractWidget {
 
-    /**
-     * Constructs a new tab panel.
-     */
-    public WTabPanelCustom() {
-        add(tabRibbon, 0, 0);
-        add(mainPanel, 0, TAB_HEIGHT);
-    }
+    private static final int TAB_HEIGHT = 16;
+    private static final int TAB_WIDTH  = 28;
+
+    private final List<TabEntry> tabs = new ArrayList<>();
+    private int selectedTab = 0;
+
+    private int cardWidth;
+    private int cardHeight;
 
     public WTabPanelCustom(int cardWidth, int cardHeight) {
-        this();
-        mainPanel.setSize(cardWidth, cardHeight);
+        super(0, 0, cardWidth, cardHeight + TAB_HEIGHT, Component.empty());
+        this.cardWidth  = cardWidth;
+        this.cardHeight = cardHeight;
     }
 
-    private void add(WWidget widget, int x, int y) {
-        children.add(widget);
-        widget.setParent(this);
-        widget.setLocation(x, y);
-        expandToFit(widget);
-    }
-
-    /**
-     * Adds a tab to this panel.
-     *
-     * @param tab the added tab
-     */
-    public void add(Tab tab) {
-        WTab tabWidget = new WTab(tab);
-
-        if (tabWidgets.isEmpty()) {
-            tabWidget.selected = true;
-        }
-
-        tabWidgets.add(tabWidget);
-        tabRibbon.add(tabWidget, TAB_WIDTH, TAB_HEIGHT + TAB_PADDING);
-        mainPanel.add(tab.getWidget());
-    }
-
-    /**
-     * Configures and adds a tab to this panel.
-     *
-     * @param widget       the contained widget
-     * @param configurator the tab configurator
-     */
-    public void add(WWidget widget, Consumer<Tab.Builder> configurator) {
+    public void add(AbstractWidget widget, Consumer<Tab.Builder> configurator) {
         Tab.Builder builder = new Tab.Builder(widget);
         configurator.accept(builder);
-        add(builder.build());
+        Tab tab = builder.build();
+        tabs.add(new TabEntry(tab, tabs.isEmpty()));
     }
 
     @Override
-    public void setSize(int x, int y) {
-        super.setSize(x, y);
-        tabRibbon.setSize(x, TAB_HEIGHT);
-        mainPanel.setSize(x, y - TAB_HEIGHT);
+    public void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        int x = getX();
+        int y = getY();
+        var font = Minecraft.getInstance().font;
+
+        // ── Onglets ──
+        int tabX = x;
+        for (int i = 0; i < tabs.size(); i++) {
+            TabEntry entry = tabs.get(i);
+            boolean selected = (i == selectedTab);
+            int tabW = TAB_WIDTH + (entry.tab.title != null ? font.width(entry.tab.title) : 0);
+
+            // Fond onglet
+            int bg = selected ? 0xFF_3C3F41 : 0xFF_262626;
+            graphics.fill(tabX, y, tabX + tabW, y + TAB_HEIGHT, bg);
+            // Bordure basse si sélectionné
+            if (selected) {
+                graphics.fill(tabX, y + TAB_HEIGHT - 1, tabX + tabW, y + TAB_HEIGHT, 0xFF_3C3F41);
+            }
+
+            // Titre
+            if (entry.tab.title != null) {
+                int textY = y + (TAB_HEIGHT - font.lineHeight) / 2;
+                graphics.drawString(font, entry.tab.title, tabX + 4, textY, ModOptionsGui.TEXT_COLOR, false);
+            }
+
+            entry.tabX = tabX;
+            entry.tabW = tabW;
+            tabX += tabW + 1;
+        }
+
+        // ── Fond du panneau principal ──
+        int panelY = y + TAB_HEIGHT;
+        graphics.fill(x, panelY, x + cardWidth, panelY + cardHeight, 0xFF_3C3F41);
+
+        // ── Contenu de l'onglet sélectionné ──
+        if (selectedTab < tabs.size()) {
+            AbstractWidget content = tabs.get(selectedTab).tab.widget;
+            content.setPosition(x + 4, panelY + 4);
+            content.setWidth(cardWidth - 8);
+            content.render(graphics, mouseX, mouseY, partialTick);
+        }
     }
 
-    @Environment(EnvType.CLIENT)
     @Override
-    public void addPainters() {
-        super.addPainters();
-        mainPanel.setBackgroundPainter(BackgroundPainter.VANILLA);
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        int y = getY();
+        // Clic sur un onglet
+        for (int i = 0; i < tabs.size(); i++) {
+            TabEntry entry = tabs.get(i);
+            if (mouseX >= entry.tabX && mouseX < entry.tabX + entry.tabW
+                    && mouseY >= y && mouseY < y + TAB_HEIGHT) {
+                selectedTab = i;
+                Minecraft.getInstance().getSoundManager()
+                        .play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
+                return true;
+            }
+        }
+        // Clic dans le contenu
+        if (selectedTab < tabs.size()) {
+            return tabs.get(selectedTab).tab.widget.mouseClicked(mouseX, mouseY, button);
+        }
+        return false;
     }
 
-    /**
-     * The data of a tab.
-     */
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (selectedTab < tabs.size()) {
+            return tabs.get(selectedTab).tab.widget.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+        }
+        return false;
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (selectedTab < tabs.size()) {
+            return tabs.get(selectedTab).tab.widget.keyPressed(keyCode, scanCode, modifiers);
+        }
+        return false;
+    }
+
+    @Override
+    public boolean charTyped(char c, int modifiers) {
+        if (selectedTab < tabs.size()) {
+            return tabs.get(selectedTab).tab.widget.charTyped(c, modifiers);
+        }
+        return false;
+    }
+
+    @Override
+    protected void updateWidgetNarration(NarrationElementOutput output) {
+        defaultButtonNarrationText(output);
+    }
+
+    // ── Données ──────────────────────────────────────────────────────────────────
+
+    private static class TabEntry {
+        final Tab tab;
+        boolean selected;
+        int tabX;
+        int tabW;
+
+        TabEntry(Tab tab, boolean selected) {
+            this.tab = tab;
+            this.selected = selected;
+        }
+    }
+
     public static class Tab {
-        @Nullable
-        private final Text title;
-        @Nullable
-        private final Icon icon;
-        private final WWidget widget;
-        @Nullable
-        private final Consumer<TooltipBuilder> tooltip;
+        @Nullable final Component title;
+        final AbstractWidget widget;
 
-        private Tab(@Nullable Text title, @Nullable Icon icon, WWidget widget, @Nullable Consumer<TooltipBuilder> tooltip) {
-            if (title == null && icon == null) {
-                throw new IllegalArgumentException("A tab must have a title or an icon");
-            }
-
-            this.title = title;
-            this.icon = icon;
-            this.widget = Objects.requireNonNull(widget, "widget");
-            this.tooltip = tooltip;
+        private Tab(@Nullable Component title, AbstractWidget widget) {
+            this.title  = title;
+            this.widget = Objects.requireNonNull(widget);
         }
 
-        /**
-         * Gets the title of this tab.
-         *
-         * @return the title, or null if there's no title
-         */
-        @Nullable
-        public Text getTitle() {
-            return title;
-        }
+        public static class Builder {
+            private final AbstractWidget widget;
+            @Nullable private Component title;
 
-        /**
-         * Gets the icon of this tab.
-         *
-         * @return the icon, or null if there's no title
-         */
-        @Nullable
-        public Icon getIcon() {
-            return icon;
-        }
-
-        /**
-         * Gets the contained widget of this tab.
-         *
-         * @return the contained widget
-         */
-        public WWidget getWidget() {
-            return widget;
-        }
-
-        /**
-         * Adds this widget's tooltip to the {@code tooltip} builder.
-         *
-         * @param tooltip the tooltip builder
-         */
-        @Environment(EnvType.CLIENT)
-        public void addTooltip(TooltipBuilder tooltip) {
-            if (this.tooltip != null) {
-                this.tooltip.accept(tooltip);
-            }
-        }
-
-        /**
-         * A builder for tab data.
-         */
-        public static final class Builder {
-            private final WWidget widget;
-            private final List<Text> tooltip = new ArrayList<>();
-            @Nullable
-            private Text title;
-            @Nullable
-            private Icon icon;
-
-            /**
-             * Constructs a new tab data builder.
-             *
-             * @param widget the contained widget
-             * @throws NullPointerException if the widget is null
-             */
-            public Builder(WWidget widget) {
-                this.widget = Objects.requireNonNull(widget, "widget");
+            public Builder(AbstractWidget widget) {
+                this.widget = widget;
             }
 
-            /**
-             * Sets the tab title.
-             *
-             * @param title the new title
-             * @return this builder
-             * @throws NullPointerException if the title is null
-             */
-            public Builder title(Text title) {
-                this.title = Objects.requireNonNull(title, "title");
-                return this;
+            public Builder title(Component title) {
+                this.title = title; return this;
             }
 
-            /**
-             * Sets the tab icon.
-             *
-             * @param icon the new icon
-             * @return this builder
-             * @throws NullPointerException if the icon is null
-             */
-            public Builder icon(Icon icon) {
-                this.icon = Objects.requireNonNull(icon, "icon");
-                return this;
-            }
-
-            /**
-             * Adds lines to the tab's tooltip.
-             *
-             * @param lines the added lines
-             * @return this builder
-             * @throws NullPointerException if the line array is null
-             */
-            public Builder tooltip(Text... lines) {
-                Objects.requireNonNull(lines, "lines");
-                Collections.addAll(tooltip, lines);
-
-                return this;
-            }
-
-            /**
-             * Adds lines to the tab's tooltip.
-             *
-             * @param lines the added lines
-             * @return this builder
-             * @throws NullPointerException if the line collection is null
-             */
-            public Builder tooltip(Collection<? extends Text> lines) {
-                Objects.requireNonNull(lines, "lines");
-                tooltip.addAll(lines);
-                return this;
-            }
-
-            /**
-             * Builds a tab from this builder.
-             *
-             * @return the built tab
-             */
             public Tab build() {
-                Consumer<TooltipBuilder> tooltip = null;
-
-                if (!this.tooltip.isEmpty()) {
-                    //noinspection Convert2Lambda
-                    tooltip = new Consumer<TooltipBuilder>() {
-                        @Environment(EnvType.CLIENT)
-                        @Override
-                        public void accept(TooltipBuilder builder) {
-                            builder.add(Builder.this.tooltip.toArray(new Text[0]));
-                        }
-                    };
-                }
-
-                return new Tab(title, icon, widget, tooltip);
+                return new Tab(title, widget);
             }
-        }
-    }
-
-    /**
-     * Internal background painter instances for tabs.
-     */
-    @Environment(EnvType.CLIENT)
-    final static class Painters {
-        static final BackgroundPainter SELECTED_TAB =
-                BackgroundPainter.createNinePatch(new Texture(Identifier.of(ModOptions.MOD_ID, "textures/selected_tab.png")),
-                        builder -> builder.mode(NinePatch.Mode.STRETCHING).cornerSize(4).cornerUv(0.25f));
-        static final BackgroundPainter UNSELECTED_TAB =
-                BackgroundPainter.createNinePatch(Identifier.of(ModOptions.MOD_ID, "textures/background_dark.png"));
-    }
-
-    private final class WTab extends WWidget {
-        private final Tab data;
-        boolean selected = false;
-
-        WTab(Tab data) {
-            this.data = data;
-        }
-
-        @Override
-        public boolean canResize() {
-            return true;
-        }
-
-        @Override
-        public boolean canFocus() {
-            return true;
-        }
-
-        @Environment(EnvType.CLIENT)
-        @Override
-        public InputResult onClick(Click click, boolean doubled) {
-            super.onClick(click, doubled);
-
-            MinecraftClient.getInstance().getSoundManager().play(PositionedSoundInstance.master(SoundEvents.UI_BUTTON_CLICK, 1.0F));
-
-            for (WTab tab : tabWidgets) {
-                tab.selected = (tab == this);
-            }
-
-            mainPanel.setSelectedCard(data.getWidget());
-            WTabPanelCustom.this.layout();
-            return InputResult.PROCESSED;
-        }
-
-        @Environment(EnvType.CLIENT)
-        @Override
-        public InputResult onKeyPressed(KeyInput input) {
-            if (isActivationKey(input.key())) {
-                onClick(new Click(0,0, new MouseInput(0,0)), false);
-                return InputResult.PROCESSED;
-            }
-
-            return InputResult.IGNORED;
-        }
-
-        @Environment(EnvType.CLIENT)
-        @Override
-        public void paint(DrawContext context, int x, int y, int mouseX, int mouseY) {
-            TextRenderer renderer = MinecraftClient.getInstance().textRenderer;
-            Text title = data.getTitle();
-            Icon icon = data.getIcon();
-
-            if (title != null) {
-                int width = TAB_WIDTH + renderer.getWidth(title);
-                if (icon == null) width = Math.max(TAB_WIDTH, width - ICON_SIZE);
-
-                if (this.width != width) {
-                    setSize(width, this.height);
-                    getParent().layout();
-                }
-            }
-
-            (selected ? Painters.SELECTED_TAB : Painters.UNSELECTED_TAB).paintBackground(context, x, y, this);
-
-            int iconX = 6;
-
-            if (title != null) {
-                int titleX = (icon != null) ? iconX + ICON_SIZE + 1 : 1;
-                int titleY = (height - TAB_PADDING - renderer.fontHeight) / 2 + 1;
-                int width = (icon != null) ? this.width - iconX - ICON_SIZE : this.width;
-                HorizontalAlignment align = (icon != null) ? HorizontalAlignment.LEFT : HorizontalAlignment.CENTER;
-
-                int color = ModOptionsGui.TEXT_COLOR;
-
-                if (isFocused()) {
-                    title = title.copy().setStyle(Style.EMPTY.withUnderline(true));
-                }
-
-                ScreenDrawing.drawString(context, title.asOrderedText(), align, x + titleX, y + titleY, width, color);
-            }
-
-            if (icon != null) {
-                icon.paint(context, x + iconX, y + (height - TAB_PADDING - ICON_SIZE) / 2, ICON_SIZE);
-            }
-        }
-
-        @Environment(EnvType.CLIENT)
-        @Override
-        public void addTooltip(TooltipBuilder tooltip) {
-            data.addTooltip(tooltip);
-        }
-
-        @Environment(EnvType.CLIENT)
-        @Override
-        public void addNarrations(NarrationMessageBuilder builder) {
-            Text label = data.getTitle();
-
-            if (label != null) {
-                builder.put(NarrationPart.TITLE, Text.translatable(NarrationMessages.TAB_TITLE_KEY, label));
-            }
-
-            builder.put(NarrationPart.POSITION, Text.translatable(NarrationMessages.TAB_POSITION_KEY, tabWidgets.indexOf(this) + 1, tabWidgets.size()));
         }
     }
 }

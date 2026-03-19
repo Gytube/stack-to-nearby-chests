@@ -1,38 +1,45 @@
 package io.github.xiaocihua.stacktonearbychests.mixin;
 
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.screen.slot.Slot;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.world.inventory.Slot;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 import org.spongepowered.asm.mixin.gen.Invoker;
 
-@Mixin(HandledScreen.class)
+// Remplace HandledScreen → AbstractContainerScreen (Mojang mappings)
+@Mixin(AbstractContainerScreen.class)
 public interface HandledScreenAccessor {
 
-    @Accessor("x")
+    // Remplace "x" → "leftPos" (Mojang mappings)
+    @Accessor("leftPos")
     int getX();
 
-    @Accessor("x")
+    @Accessor("leftPos")
     void setX(int x);
 
-    @Accessor("y")
+    // Remplace "y" → "topPos" (Mojang mappings)
+    @Accessor("topPos")
     int getY();
 
-    @Accessor("y")
+    @Accessor("topPos")
     void setY(int y);
 
-    @Accessor("focusedSlot")
+    // Remplace "focusedSlot" → "hoveredSlot" (Mojang mappings)
+    @Accessor("hoveredSlot")
     @Nullable
     Slot getFocusedSlot();
 
-    @Accessor
+    // Remplace "backgroundWidth" → "imageWidth" (Mojang mappings)
+    @Accessor("imageWidth")
     int getBackgroundWidth();
 
-    @Accessor
+    // Remplace "backgroundHeight" → "imageHeight" (Mojang mappings)
+    @Accessor("imageHeight")
     int getBackgroundHeight();
 
-    @Invoker
+    // Remplace getSlotAt → findSlot (Mojang mappings)
+    @Invoker("findSlot")
     @Nullable
     Slot invokeGetSlotAt(double x, double y);
 }

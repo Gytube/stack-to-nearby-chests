@@ -1,15 +1,16 @@
 package io.github.xiaocihua.stacktonearbychests;
 
-import io.github.xiaocihua.stacktonearbychests.event.OnKeyCallback;
-import io.github.xiaocihua.stacktonearbychests.event.SetScreenCallback;
-import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.DeathScreen;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.text.Text;
-import net.minecraft.text.TranslatableTextContent;
-import net.minecraft.util.ActionResult;
+import io.github.xiaocihua.stacktonearbychests.event.OnKeyEvent;
+import io.github.xiaocihua.stacktonearbychests.event.SetScreenEvent;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.DeathScreen;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.contents.TranslatableContents;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.neoforged.neoforge.client.event.ClientChatReceivedEvent;
+import net.neoforged.neoforge.common.NeoForge;
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
 
@@ -17,14 +18,15 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
+
 public abstract class ForEachContainerTask {
 
     private static final ScheduledThreadPoolExecutor TIMER = new ScheduledThreadPoolExecutor(1);
     private static ForEachContainerTask currentTask;
 
-    protected final MinecraftClient client;
-    protected final ClientPlayerEntity player;
-    protected final Consumer<ScreenHandler> action;
+    protected final Minecraft client;
+    protected final LocalPlayer player;
+    protected final Consumer<AbstractContainerMenu> action;
 
     private boolean interrupted;
     private final int searchInterval;
@@ -32,7 +34,7 @@ public abstract class ForEachContainerTask {
     @Nullable
     private ForEachContainerTask after;
 
-    public ForEachContainerTask(MinecraftClient client, ClientPlayerEntity player, Consumer<ScreenHandler> action) {
+    public ForEachContainerTask(Minecraft client, LocalPlayer player, Consumer<AbstractContainerMenu> action) {
         this.client = client;
         this.player = player;
         this.action = action;
@@ -40,33 +42,33 @@ public abstract class ForEachContainerTask {
     }
 
     public static void init() {
-        SetScreenCallback.EVENT.register(screen -> {
+        // Remplace SetScreenCallback.EVENT
+        NeoForge.EVENT_BUS.addListener((SetScreenEvent event) -> {
             if (isRunning()) {
-                if (screen instanceof DeathScreen) {
+                if (event.getScreen() instanceof DeathScreen) {
                     currentTask.interrupt();
-                    return ActionResult.PASS;
+                    event.setResult(InteractionResult.PASS);
+                    return;
                 }
-
-                return ActionResult.FAIL;
+                event.setResult(InteractionResult.FAIL);
+                event.deny();
             }
-
-            return ActionResult.PASS;
         });
 
-        OnKeyCallback.PRESS.register(key -> {
+        // Remplace OnKeyCallback.PRESS
+        NeoForge.EVENT_BUS.addListener((OnKeyEvent.Press event) -> {
             if (isRunning()) {
-                if (key == GLFW.GLFW_KEY_ESCAPE) {
+                if (event.getKey() == GLFW.GLFW_KEY_ESCAPE) {
                     currentTask.interrupt();
                 }
-
-                return ActionResult.FAIL;
+                event.setResult(InteractionResult.FAIL);
             }
-            return ActionResult.PASS;
         });
 
-        ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
+        // Remplace ClientReceiveMessageEvents.GAME
+        NeoForge.EVENT_BUS.addListener((ClientChatReceivedEvent event) -> {
             if (isRunning()
-                    && message.getContent() instanceof TranslatableTextContent translatable
+                    && event.getMessage().getContents() instanceof TranslatableContents translatable
                     && translatable.getKey().equals("container.isLocked")) {
                 getCurrentTask().openNextContainer();
             }
@@ -87,20 +89,20 @@ public abstract class ForEachContainerTask {
     }
 
     protected void stop() {
-        player.closeHandledScreen();
+        // Remplace player.closeHandledScreen()
+        player.closeContainer();
         TIMER.getQueue().clear();
         currentTask = null;
     }
 
     public void interrupt() {
-        sendChatMessage("stack-to-nearby-chests.message.actionInterrupted");
+        sendChatMessage("stacktonearbychests.message.actionInterrupted");
         interrupted = true;
     }
 
-    public void onInventory(ScreenHandler screenHandler) {
+    public void onInventory(AbstractContainerMenu menu) {
         clearTimeout();
-        action.accept(screenHandler);
-
+        action.accept(menu);
         openNextContainer();
     }
 
@@ -113,12 +115,12 @@ public abstract class ForEachContainerTask {
         if (searchInterval == 0) {
             openNextContainerExceptionHandled();
         } else {
-            TIMER.schedule(() -> client.execute(this::openNextContainerExceptionHandled), searchInterval, TimeUnit.MILLISECONDS);
+            TIMER.schedule(() -> client.execute(this::openNextContainerExceptionHandled),
+                    searchInterval, TimeUnit.MILLISECONDS);
         }
     }
 
     private void openNextContainerExceptionHandled() {
-        // This method may be submitted to MinecraftClient for execution, so exceptions need to be handled here
         try {
             if (findAndOpenNextContainer()) {
                 setTimeout();
@@ -128,21 +130,17 @@ public abstract class ForEachContainerTask {
                 stop();
             }
         } catch (Exception e) {
-            sendChatMessage("stack-to-nearby-chests.message.exceptionOccurred");
+            sendChatMessage("stacktonearbychests.message.exceptionOccurred");
             StackToNearbyChests.LOGGER.error("An exception occurred", e);
             stop();
         }
     }
 
-    /**
-     * Open the next container.
-     * @return {@code true} if successfully found and interacted with an eligible container
-     */
     protected abstract boolean findAndOpenNextContainer();
 
     private void setTimeout() {
         TIMER.schedule(() -> client.execute(() -> {
-            sendChatMessage("stack-to-nearby-chests.message.interruptedByTimeout");
+            sendChatMessage("stacktonearbychests.message.interruptedByTimeout");
             stop();
         }), 2, TimeUnit.SECONDS);
     }
@@ -156,6 +154,7 @@ public abstract class ForEachContainerTask {
     }
 
     private void sendChatMessage(String key) {
-        MinecraftClient.getInstance().inGameHud.getChatHud().addMessage(Text.translatable(key));
+        // Remplace client.inGameHud.getChatHud().addMessage()
+        Minecraft.getInstance().gui.getChat().addMessage(Component.translatable(key));
     }
 }

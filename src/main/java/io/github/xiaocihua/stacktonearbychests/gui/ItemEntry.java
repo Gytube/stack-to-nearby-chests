@@ -1,42 +1,45 @@
 package io.github.xiaocihua.stacktonearbychests.gui;
 
-import io.github.cottonmc.cotton.gui.client.ScreenDrawing;
-import io.github.cottonmc.cotton.gui.widget.icon.Icon;
-import io.github.cottonmc.cotton.gui.widget.icon.ItemIcon;
-import io.github.cottonmc.cotton.gui.widget.icon.TextureIcon;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.texture.MissingSprite;
-import net.minecraft.item.Item;
-import net.minecraft.registry.Registries;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
 
 import java.util.Optional;
 
-@Environment(EnvType.CLIENT)
-public class ItemEntry extends SelectableEntryList.Entry<Identifier> {
+@OnlyIn(Dist.CLIENT)
+public class ItemEntry extends SelectableEntryList.Entry<ResourceLocation> {
 
-    private final Icon icon;
-    private final Text name;
+    private final Optional<Item> item;
+    private final Component name;
 
-    public ItemEntry(Identifier id) {
+    public ItemEntry(ResourceLocation id) {
         super(id);
-        Optional<Item> item = Registries.ITEM.getOptionalValue(id);
-        icon = item.<Icon>map(ItemIcon::new).orElse(new TextureIcon(MissingSprite.getMissingSpriteId()));
-        name = item.map(Item::getName).orElse(Text.of(id.toString()));
+        item = BuiltInRegistries.ITEM.getOptional(id);
+        name = item.map(Item::getDescription).orElse(Component.literal(id.toString()));
     }
 
     @Override
-    public void paint(DrawContext context, int x, int y, int mouseX, int mouseY) {
-        super.paint(context, x, y, mouseX, mouseY);
+    public void render(GuiGraphics graphics, int x, int y, int mouseX, int mouseY) {
+        this.render(graphics, x, y, mouseX, mouseY);
+        var font     = Minecraft.getInstance().font;
+        int inset    = 6;
         int iconSize = 16;
-        int inset = 6;
-        int fontWidth = MinecraftClient.getInstance().textRenderer.getWidth(name.asOrderedText());
-        int fontHeight = MinecraftClient.getInstance().textRenderer.fontHeight + 2;
-        icon.paint(context, x + inset, y + (height - iconSize) / 2, 16);
-        ScreenDrawing.drawString(context, name.asOrderedText(), x + width - inset - fontWidth, y + (height - fontHeight) / 2 + 2, TEXT_COLOR);
+
+        // Icône de l'item
+        item.ifPresent(i -> graphics.renderItem(
+                new ItemStack(i),
+                x + inset,
+                y + (height - iconSize) / 2));
+
+        // Nom
+        int fontWidth = font.width(name);
+        int fontY     = y + (height - font.lineHeight) / 2;
+        graphics.drawString(font, name, x + width - inset - fontWidth, fontY, ModOptionsGui.TEXT_COLOR, false);
     }
 }

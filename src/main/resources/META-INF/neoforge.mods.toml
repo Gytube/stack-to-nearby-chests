@@ -1,0 +1,52 @@
+modLoader = "javafml"
+loaderVersion = "${loader_version_range}"
+license = "LGPL-3.0"
+
+[[mods]]
+    modId = "stacktonearbychests"
+    version = "${version}"
+    displayName = "Stack to Nearby Chests"
+    description = '''
+A client-side ONLY mod, adds the quick stacking and restocking features from Terraria into Minecraft.
+'''
+    logoFile = "assets/stacktonearbychests/icon.png"
+
+    [[mods.authors]]
+        name = "xiaocihua"
+
+    [mods.contact]
+        homepage = "https://github.com/xiaocihua"
+        sources  = "https://github.com/xiaocihua/stack-to-nearby-chests"
+        issues   = "https://github.com/xiaocihua/stack-to-nearby-chests/issues"
+
+# ── Dépendances ────────────────────────────────────────────────────────────────
+
+[[dependencies.stacktonearbychests]]
+    modId      = "neoforge"
+    type       = "required"
+    versionRange = "${neo_version_range}"
+    ordering   = "NONE"
+    side       = "CLIENT"
+
+[[dependencies.stacktonearbychests]]
+    modId      = "minecraft"
+    type       = "required"
+    versionRange = "${minecraft_version_range}"
+    ordering   = "NONE"
+    side       = "CLIENT"
+
+# ── Dépendances optionnelles ───────────────────────────────────────────────────
+
+[[dependencies.stacktonearbychests]]
+    modId      = "emi"
+    type       = "optional"
+    versionRange = "*"
+    ordering   = "NONE"
+    side       = "CLIENT"
+
+[[dependencies.stacktonearbychests]]
+    modId      = "roughlyenoughitems"
+    type       = "optional"
+    versionRange = "*"
+    ordering   = "NONE"
+    side       = "CLIENT"

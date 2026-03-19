@@ -1,26 +1,40 @@
 package io.github.xiaocihua.stacktonearbychests.mixin;
 
-import io.github.xiaocihua.stacktonearbychests.event.OnKeyCallback;
-import net.minecraft.client.Keyboard;
-import net.minecraft.client.input.KeyInput;
-import net.minecraft.util.ActionResult;
+import io.github.xiaocihua.stacktonearbychests.event.OnKeyEvent;
+import net.minecraft.client.KeyboardHandler;
+import net.minecraft.world.InteractionResult;
+import net.neoforged.neoforge.common.NeoForge;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(Keyboard.class)
+// Remplace Keyboard → KeyboardHandler (Mojang mappings)
+@Mixin(KeyboardHandler.class)
 public abstract class KeyboardMixin {
 
-    @Inject(method = "onKey", at = @At(value = "FIELD", target = "Lnet/minecraft/client/Keyboard;debugCrashStartTime:J", ordinal = 0), cancellable = true)
-    private void onOnKey(long window, int action, KeyInput input, CallbackInfo ci) {
-        ActionResult result = switch (action) {
-            case 0 -> OnKeyCallback.RELEASE.invoker().update(input.key());
-            case 1 -> OnKeyCallback.PRESS.invoker().update(input.key());
-            default -> ActionResult.PASS;
+    // Remplace onKey → keyPress, debugCrashStartTime → debugCrashKeyTime (Mojang mappings)
+    @Inject(method = "keyPress",
+            at = @At(value = "FIELD",
+                    target = "Lnet/minecraft/client/KeyboardHandler;debugCrashKeyTime:J",
+                    ordinal = 0),
+            cancellable = true)
+    private void onOnKey(long window, int key, int scanCode, int action, int modifiers, CallbackInfo ci) {
+        InteractionResult result = switch (action) {
+            case 0 -> {
+                OnKeyEvent.Release event = new OnKeyEvent.Release(key);
+                NeoForge.EVENT_BUS.post(event);
+                yield event.getResult();
+            }
+            case 1 -> {
+                OnKeyEvent.Press event = new OnKeyEvent.Press(key);
+                NeoForge.EVENT_BUS.post(event);
+                yield event.getResult();
+            }
+            default -> InteractionResult.PASS;
         };
 
-        if (result == ActionResult.FAIL) {
+        if (result == InteractionResult.FAIL) {
             ci.cancel();
         }
     }

@@ -1,44 +1,41 @@
 package io.github.xiaocihua.stacktonearbychests.gui;
 
-import io.github.cottonmc.cotton.gui.client.ScreenDrawing;
-import io.github.cottonmc.cotton.gui.widget.WButton;
-import io.github.cottonmc.cotton.gui.widget.data.HorizontalAlignment;
-import io.github.cottonmc.cotton.gui.widget.icon.Icon;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.text.Text;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.network.chat.Component;
 
 import java.util.OptionalInt;
 
-public class FlatColorButton extends WButton {
+/**
+ * Remplace FlatColorButton (LibGui WButton) par un Button vanilla NeoForge.
+ * Rendu plat avec couleur de fond configurable et bordure optionnelle.
+ */
+public class FlatColorButton extends Button {
 
-    private int regularColor = 0x00_000000;
-    private int hoveredColor = 0x14_FFFFFF;
+    private int regularColor  = 0x00_000000;
+    private int hoveredColor  = 0x14_FFFFFF;
     private int disabledColor = 0x00_000000;
-
     private OptionalInt borderColor = OptionalInt.empty();
 
-    public FlatColorButton() {}
+    // ── Constructeurs ────────────────────────────────────────────────────────────
 
-    public FlatColorButton(Text text) {
-        super(text);
+    public FlatColorButton(Component text, OnPress onPress) {
+        super(Button.builder(text, onPress).size(20, 20));
     }
 
-    public FlatColorButton(Icon icon, Text text) {
-        super(icon, text);
-    }
-
-    public FlatColorButton(int regularColor, int hoveredColor, int disabledColor) {
-        this.regularColor = regularColor;
-        this.hoveredColor = hoveredColor;
+    public FlatColorButton(Component text, int regularColor, int hoveredColor, int disabledColor, OnPress onPress) {
+        this(text, onPress);
+        this.regularColor  = regularColor;
+        this.hoveredColor  = hoveredColor;
         this.disabledColor = disabledColor;
     }
 
-    public FlatColorButton(Text text, int regularColor, int hoveredColor, int disabledColor) {
-        super(text);
-        this.regularColor = regularColor;
-        this.hoveredColor = hoveredColor;
-        this.disabledColor = disabledColor;
+    /** Raccourci sans action (utilisé quand onClick est géré par sous-classe). */
+    public static FlatColorButton noOp(Component text) {
+        return new FlatColorButton(text, btn -> {});
     }
+
+    // ── Fluent setters ───────────────────────────────────────────────────────────
 
     public FlatColorButton setBorder() {
         return setBorder(0xFF_717171);
@@ -49,50 +46,39 @@ public class FlatColorButton extends WButton {
         return this;
     }
 
-    @Override
-    public void setSize(int width, int height) {
-        this.width = width;
-        this.height = height;
+    public FlatColorButton colors(int regular, int hovered, int disabled) {
+        this.regularColor  = regular;
+        this.hoveredColor  = hovered;
+        this.disabledColor = disabled;
+        return this;
     }
 
+    // ── Rendu ────────────────────────────────────────────────────────────────────
+
     @Override
-    public void paint(DrawContext context, int x, int y, int mouseX, int mouseY) {
-        boolean hovered = (mouseX >= 0 && mouseY >= 0 && mouseX < getWidth() && mouseY < getHeight());
-        boolean enabled = isEnabled();
-        Icon icon = getIcon();
-        Text label = getLabel();
+    public void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        boolean hovered = isHovered();
+        boolean enabled = isActive();
 
-        if (!enabled) {
-            ScreenDrawing.coloredRect(context, x, y, width, height, disabledColor);
-        } else if (hovered || isFocused()) {
-            ScreenDrawing.coloredRect(context, x, y, width, height, hoveredColor);
-        } else {
-            ScreenDrawing.coloredRect(context, x, y, width, height, regularColor);
-        }
+        int bg = !enabled ? disabledColor : hovered || isFocused() ? hoveredColor : regularColor;
+        graphics.fill(getX(), getY(), getX() + width, getY() + height, bg);
 
-        borderColor.ifPresent(color -> drawBorder(context, x, y, width, height, color));
+        borderColor.ifPresent(color -> drawBorder(graphics, getX(), getY(), width, height, color));
 
-        if (icon != null) {
-            icon.paint(context, x + 2, y + 2, 16);
-        }
-
-        if (label != null) {
-            int color = 0xFF_E0E0E0;
-            if (!enabled) {
-                color = 0xFF_A0A0A0;
-            } /*else if (hovered) {
-				color = 0xFFFFA0;
-			}*/
-
-            int xOffset = (icon != null && alignment == HorizontalAlignment.LEFT) ? 18 : 0;
-            ScreenDrawing.drawStringWithShadow(context, label.asOrderedText(), alignment, x + xOffset, y + ((height - 8) / 2), width, color); //LibGuiClient.config.darkMode ? darkmodeColor : color);
-        }
+        // Texte centré
+        int textColor = enabled ? 0xFF_E0E0E0 : 0xFF_A0A0A0;
+        graphics.drawCenteredString(
+                net.minecraft.client.Minecraft.getInstance().font,
+                getMessage(),
+                getX() + width / 2,
+                getY() + (height - 8) / 2,
+                textColor);
     }
 
-    protected void drawBorder(DrawContext context, int x, int y, int width, int height, int color) {
-        ScreenDrawing.coloredRect(context, x, y, width, 1, color);
-        ScreenDrawing.coloredRect(context, x, y + height - 1, width, 1, color);
-        ScreenDrawing.coloredRect(context, x, y, 1, height, color);
-        ScreenDrawing.coloredRect(context, x + width - 1, y, 1, height, color);
+    protected void drawBorder(GuiGraphics g, int x, int y, int w, int h, int color) {
+        g.fill(x,         y,          x + w,     y + 1,     color); // top
+        g.fill(x,         y + h - 1,  x + w,     y + h,     color); // bottom
+        g.fill(x,         y,          x + 1,     y + h,     color); // left
+        g.fill(x + w - 1, y,          x + w,     y + h,     color); // right
     }
 }

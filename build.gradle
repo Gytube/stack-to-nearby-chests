@@ -1,5 +1,5 @@
 plugins {
-     id 'fabric-loom' version "${loom_version}"
+    id 'net.neoforged.moddev' version '2.0.78'
     id 'maven-publish'
 }
 
@@ -10,107 +10,98 @@ base {
     archivesName = "${project.archives_base_name}-mc${project.minecraft_version}"
 }
 
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+    withSourcesJar()
+}
+
 repositories {
-    // Add repositories to retrieve artifacts from in here.
-    // You should only use this when depending on other mods because
-    // Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
-    // See https://docs.gradle.org/current/userguide/declaring_repositories.html
-    // for more information about repositories.
-    maven {
-        name = "CottonMC"
-        url = "https://server.bbkr.space/artifactory/libs-release"
-    }
-    maven{
-        url = "https://maven.terraformersmc.com/releases/"
-    }
+    // REI & Cloth Config
     maven {
         url = "https://maven.shedaniel.me/"
     }
-//    maven {
-//        url = "https://maven.architectury.dev/"
-//    }
+    // EMI
+    maven {
+        url = "https://maven.terraformersmc.com/releases/"
+    }
+    // Fallback
+    mavenCentral()
 }
 
-repositories.named("Mojang", MavenArtifactRepository) {
-    artifactUrls ArtifactRepositoryContainer.MAVEN_CENTRAL_URL
-}
+neoForge {
+    version = project.neo_version
 
-loom {
     runs {
         client {
-            runDir = "run${minecraft_version}"
-            vmArgs("-XX:+AllowEnhancedClassRedefinition", "-XX:HotswapAgent=fatjar")
-            programArgs("--width=1280",  "--height=720")
+            client()
+            gameDirectory = project.file("run${minecraft_version}")
+            jvmArguments.addAll(
+                "-XX:+AllowEnhancedClassRedefinition",
+                "-XX:HotswapAgent=fatjar"
+            )
+            programArguments.addAll("--width=1280", "--height=720")
+        }
+        server {
+            server()
+            programArgument "--nogui"
         }
     }
 
-//    splitEnvironmentSourceSets()
-//
-//    mods {
-//        modid {
-//            sourceSet sourceSets.main
-//            sourceSet sourceSets.client
-//        }
-//    }
+    mods {
+        "${mod_id}" {
+            sourceSet sourceSets.main
+        }
+    }
 }
 
 dependencies {
-    // To change the versions see the gradle.properties file
-    minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    // EMI - NeoForge variant
+    compileOnly "dev.emi:emi-neoforge:${project.emi_version}:api"
+    // localRuntime "dev.emi:emi-neoforge:${project.emi_version}"
 
-    // Fabric API. This is technically optional, but you probably want it anyway.
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-
-    // Uncomment the following line to enable the deprecated Fabric API modules.
-    // These are included in the Fabric API production distribution and allow you to update your mod to the latest modules at a later more convenient time.
-
-    // modImplementation "net.fabricmc.fabric-api:fabric-api-deprecated:${project.fabric_version}"
-
-    modImplementation include("io.github.cottonmc:LibGui:${project.LibGui_version}")
-
-    modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
-    modLocalRuntime "com.terraformersmc:modmenu:${project.modmenu_version}"
-
-    modCompileOnly "dev.emi:emi-fabric:${project.emi_version}:api"
-//    modLocalRuntime "dev.emi:emi-fabric:${project.emi_version}"
-
-    modCompileOnly "me.shedaniel:RoughlyEnoughItems-api-fabric:${project.rei_version}"
-    modCompileOnly "me.shedaniel.cloth:basic-math:+"
-    modCompileOnly "me.shedaniel:RoughlyEnoughItems-default-plugin-fabric:${project.rei_version}"
-//    modLocalRuntime "me.shedaniel:RoughlyEnoughItems-fabric:${project.rei_version}"
+    // REI - NeoForge variant
+    compileOnly "me.shedaniel.cloth:basic-math:+"
+    // localRuntime "me.shedaniel:RoughlyEnoughItems-neoforge:${project.rei_version}"
 }
 
-processResources {
-    inputs.property "version", project.version
-
-    filesMatching("fabric.mod.json") {
-        expand "version": project.version
-    }
-}
 
 tasks.withType(JavaCompile).configureEach {
     it.options.release = 21
 }
 
-java {
-    // Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
-    // if it is present.
-    // If you remove this line, sources will not be generated.
-    withSourcesJar()
-
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
-}
-
 jar {
     from("LICENSE") {
-        rename { "${it}_${project.base.archivesName.get()}"}
+        rename { "${it}_${project.base.archivesName.get()}" }
+    }
+
+    manifest {
+        attributes([
+            'Specification-Title'     : project.mod_id,
+            'Specification-Vendor'    : project.maven_group,
+            'Specification-Version'   : '1',
+            'Implementation-Title'    : project.name,
+            'Implementation-Version'  : project.jar.archiveVersion,
+            'Implementation-Vendor'   : project.maven_group,
+        ])
     }
 }
 
-// configure the maven publication
+processResources {
+    inputs.property "version", project.version
+    inputs.property "neo_version_range", project.neo_version_range
+    inputs.property "minecraft_version_range", project.minecraft_version_range
+    inputs.property "loader_version_range", project.loader_version_range
+
+    filesMatching("META-INF/neoforge.mods.toml") {
+        expand([
+            "version"                : project.version,
+            "neo_version_range"      : project.neo_version_range,
+            "minecraft_version_range": project.minecraft_version_range,
+            "loader_version_range"   : project.loader_version_range,
+        ])
+    }
+}
+
 publishing {
     publications {
         create("mavenJava", MavenPublication) {
@@ -118,12 +109,7 @@ publishing {
             from components.java
         }
     }
-
-    // See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
     repositories {
-        // Add repositories to publish to here.
-        // Notice: This block does NOT have the same function as the block in the top level.
-        // The repositories here will be used for publishing your artifact, not for
-        // retrieving dependencies.
+        // Add publishing repositories here if needed
     }
 }

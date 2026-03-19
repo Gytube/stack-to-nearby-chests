@@ -1,20 +1,21 @@
 package io.github.xiaocihua.stacktonearbychests;
 
-import io.github.xiaocihua.stacktonearbychests.event.ClickSlotCallback;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.widget.ClickableWidget;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.network.ClientPlayerInteractionManager;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.util.ActionResult;
-import net.minecraft.world.World;
+import io.github.xiaocihua.stacktonearbychests.event.ClickSlotEvent;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.multiplayer.MultiPlayerGameMode;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.neoforged.neoforge.common.NeoForge;
 import org.lwjgl.glfw.GLFW;
 
 import java.lang.reflect.InvocationTargetException;
@@ -33,147 +34,180 @@ import static java.util.stream.Collectors.toSet;
 public class InventoryActions {
 
     public static void init() {
-        ClickSlotCallback.BEFORE.register((syncId, slotId, button, actionType, player) ->
-        {
-            if (slotId == -999
-                    && actionType == SlotActionType.PICKUP
-                    && currentStackToNearbyContainersButton.map(ClickableWidget::isHovered).orElse(false)) {
-                return ActionResult.FAIL;
+        // Remplace ClickSlotCallback.BEFORE
+        NeoForge.EVENT_BUS.addListener((ClickSlotEvent.Before event) -> {
+            if (event.getSlotId() == -999
+                    && event.getClickType() == ClickType.PICKUP
+                    && currentStackToNearbyContainersButton
+                            .map(AbstractWidget::isHovered).orElse(false)) {
+                event.setResult(InteractionResult.FAIL);
+                event.setCanceled(true);
             }
-            return ActionResult.PASS;
         });
     }
 
     public static void stackToNearbyContainers() {
-        forEachContainer(InventoryActions::quickStack, ModOptions.get().behavior.stackingTargets, ModOptions.get().behavior.stackingTargetEntities);
+        forEachContainer(InventoryActions::quickStack,
+                ModOptions.get().behavior.stackingTargets,
+                ModOptions.get().behavior.stackingTargetEntities);
     }
 
     public static void stackToNearbyContainers(Item item) {
-        forEachContainer(screenHandler -> quickStack(screenHandler, item), ModOptions.get().behavior.stackingTargets, ModOptions.get().behavior.stackingTargetEntities);
+        forEachContainer(menu -> quickStack(menu, item),
+                ModOptions.get().behavior.stackingTargets,
+                ModOptions.get().behavior.stackingTargetEntities);
     }
 
     public static void restockFromNearbyContainers() {
-        forEachContainer(InventoryActions::restock, ModOptions.get().behavior.restockingSources, ModOptions.get().behavior.restockingSourceEntities);
+        forEachContainer(InventoryActions::restock,
+                ModOptions.get().behavior.restockingSources,
+                ModOptions.get().behavior.restockingSourceEntities);
     }
 
     public static boolean canMerge(ItemStack stack, ItemStack otherStack) {
-        return stack.getCount() < stack.getMaxCount() && ItemStack.areItemsAndComponentsEqual(stack, otherStack);
+        // Remplace ItemStack.areItemsAndComponentsEqual → isSameItemSameComponents
+        return stack.getCount() < stack.getMaxStackSize()
+                && ItemStack.isSameItemSameComponents(stack, otherStack);
     }
 
-    public static void forEachContainer(Consumer<ScreenHandler> action, Collection<String> blockFilter, Collection<String> entityFilter) {
-        MinecraftClient client = MinecraftClient.getInstance();
+    public static void forEachContainer(Consumer<AbstractContainerMenu> action,
+                                        Collection<String> blockFilter,
+                                        Collection<String> entityFilter) {
+        Minecraft client = Minecraft.getInstance();
 
         Entity cameraEntity = client.getCameraEntity();
-        World world = client.world;
-        ClientPlayerInteractionManager interactionManager = client.interactionManager;
-        ClientPlayerEntity player = client.player;
+        Level world = client.level;
+        MultiPlayerGameMode interactionManager = client.gameMode;
+        LocalPlayer player = client.player;
+
         if (cameraEntity == null || world == null || interactionManager == null || player == null) {
-            LOGGER.info("cameraEntity: {}, word: {}, interactionManager: {}, player: {}", cameraEntity, world ,interactionManager, player);
+            LOGGER.info("cameraEntity: {}, world: {}, interactionManager: {}, player: {}",
+                    cameraEntity, world, interactionManager, player);
             return;
         } else if (player.isSpectator()) {
             LOGGER.info("The player is in spectator mode");
             return;
-        } else if (player.isSneaking()) {
+        } else if (player.isCrouching()) {
             LOGGER.info("The player is sneaking");
             return;
         }
 
-        var task = new ForEachBlockContainerTask(client, cameraEntity, world, player, interactionManager, action, blockFilter);
+        var task = new ForEachBlockContainerTask(client, cameraEntity, world, player,
+                interactionManager, action, blockFilter);
 
-        if (ModOptions.get().behavior.supportForContainerEntities.booleanValue() && !player.hasVehicle()) {
-            task.thenStart(new ForEachEntityContainerTask(client, player, action, cameraEntity, world, interactionManager, entityFilter));
+        if (ModOptions.get().behavior.supportForContainerEntities.booleanValue()
+                && !player.isPassenger()) {
+            task.thenStart(new ForEachEntityContainerTask(client, player, action,
+                    cameraEntity, world, interactionManager, entityFilter));
         }
 
         task.start();
     }
 
-    public static void quickStack(ScreenHandler screenHandler) {
-        var slots = SlotsInScreenHandler.of(screenHandler);
+    public static void quickStack(AbstractContainerMenu menu) {
+        var slots = SlotsInMenu.of(menu);
 
         Set<Item> itemsInContainer = slots.containerSlots().stream()
-                .map(slot -> slot.getStack().getItem())
-                .filter(item -> !ModOptions.get().behavior.itemsThatWillNotBeStacked.contains(Registries.ITEM.getId(item).toString()))
+                .map(slot -> slot.getItem().getItem())
+                .filter(item -> !ModOptions.get().behavior.itemsThatWillNotBeStacked
+                        .contains(BuiltInRegistries.ITEM.getKey(item).toString()))
                 .collect(toSet());
 
-        moveAll(screenHandler, slots.playerSlots, itemsInContainer);
+        moveAll(menu, slots.playerSlots(), itemsInContainer);
     }
 
-    public static void quickStack(ScreenHandler screenHandler, Item item) {
-        var slots = SlotsInScreenHandler.of(screenHandler);
+    public static void quickStack(AbstractContainerMenu menu, Item item) {
+        var slots = SlotsInMenu.of(menu);
 
-        boolean hasSameTypeItems = slots.containerSlots.stream()
-                .anyMatch(slot -> slot.getStack().isOf(item));
+        boolean hasSameTypeItems = slots.containerSlots().stream()
+                .anyMatch(slot -> slot.getItem().is(item));
 
         if (hasSameTypeItems) {
-            moveAll(screenHandler, slots.playerSlots(), Set.of(item));
+            moveAll(menu, slots.playerSlots(), Set.of(item));
         }
     }
 
-    private static void moveAll(ScreenHandler screenHandler, List<Slot> playerSlots, Set<Item> itemsToBeMoved) {
+    private static void moveAll(AbstractContainerMenu menu,
+                                List<Slot> playerSlots,
+                                Set<Item> itemsToBeMoved) {
         playerSlots.stream()
                 .filter(slot -> !(ModOptions.get().behavior.doNotQuickStackItemsFromTheHotbar.booleanValue()
-                        && PlayerInventory.isValidHotbarIndex(slot.getIndex())))
+                        // Remplace PlayerInventory.isValidHotbarIndex → Inventory.isHotbarSlot
+                        && Inventory.isHotbarSlot(slot.getContainerSlot())))
                 .filter(not(InventoryActions::isSlotLocked))
-                .filter(slot -> itemsToBeMoved.contains(slot.getStack().getItem()))
-                .filter(slot -> slot.canTakeItems(MinecraftClient.getInstance().player))
-                .filter(Slot::hasStack)
-                .forEach(slot -> quickMove(screenHandler, slot));
+                .filter(slot -> itemsToBeMoved.contains(slot.getItem().getItem()))
+                .filter(slot -> slot.mayPickup(Minecraft.getInstance().player))
+                .filter(Slot::hasItem)
+                .forEach(slot -> quickMove(menu, slot));
     }
 
-    public static void restock(ScreenHandler screenHandler) {
-        var slots = SlotsInScreenHandler.of(screenHandler);
+    public static void restock(AbstractContainerMenu menu) {
+        var slots = SlotsInMenu.of(menu);
         slots.playerSlots().stream()
-                .filter(Slot::hasStack)
-                .filter(slot -> slot.getStack().isStackable())
+                .filter(Slot::hasItem)
+                .filter(slot -> slot.getItem().isStackable())
                 .filter(slot -> !ModOptions.get().behavior.itemsThatWillNotBeRestocked
-                        .contains(Registries.ITEM
-                                .getId(slot.getStack().getItem())
+                        .contains(BuiltInRegistries.ITEM
+                                .getKey(slot.getItem().getItem())
                                 .toString()))
                 .forEach(slot -> slots.containerSlots().stream()
-                        .filter(containerSlot -> ItemStack.areItemsAndComponentsEqual(slot.getStack(), containerSlot.getStack()))
+                        .filter(containerSlot -> ItemStack.isSameItemSameComponents(
+                                slot.getItem(), containerSlot.getItem()))
                         .peek(containerSlot -> {
-                            pickup(screenHandler, containerSlot);
-                            pickup(screenHandler, slot);
+                            pickup(menu, containerSlot);
+                            pickup(menu, slot);
                         })
-                        .filter(containerSlot -> !screenHandler.getCursorStack().isEmpty())
+                        .filter(containerSlot -> !menu.getCarried().isEmpty())
                         .findFirst()
-                        .ifPresent(containerSlot -> pickup(screenHandler, containerSlot))
+                        .ifPresent(containerSlot -> pickup(menu, containerSlot))
                 );
     }
 
-    public static void quickMove(ScreenHandler screenHandler, Slot slot) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        client.interactionManager.clickSlot(screenHandler.syncId, slot.id, GLFW.GLFW_MOUSE_BUTTON_LEFT, SlotActionType.QUICK_MOVE, client.player);
+    public static void quickMove(AbstractContainerMenu menu, Slot slot) {
+        Minecraft client = Minecraft.getInstance();
+        // Remplace interactionManager.clickSlot → gameMode.handleInventoryMouseClick
+        client.gameMode.handleInventoryMouseClick(
+                menu.containerId, slot.index,
+                GLFW.GLFW_MOUSE_BUTTON_LEFT, ClickType.QUICK_MOVE,
+                client.player);
     }
 
-    public static void pickup(ScreenHandler screenHandler, Slot slot) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        client.interactionManager.clickSlot(screenHandler.syncId, slot.id, GLFW.GLFW_MOUSE_BUTTON_LEFT, SlotActionType.PICKUP, client.player);
+    public static void pickup(AbstractContainerMenu menu, Slot slot) {
+        Minecraft client = Minecraft.getInstance();
+        client.gameMode.handleInventoryMouseClick(
+                menu.containerId, slot.index,
+                GLFW.GLFW_MOUSE_BUTTON_LEFT, ClickType.PICKUP,
+                client.player);
     }
 
-    private record SlotsInScreenHandler(List<Slot> playerSlots, List<Slot> containerSlots) {
+    // ── Slots helper ─────────────────────────────────────────────────────────────
 
-        static SlotsInScreenHandler of(ScreenHandler screenHandler) {
-            Map<Boolean, List<Slot>> inventories = screenHandler.slots.stream()
-                    .collect(partitioningBy(slot -> slot.inventory instanceof PlayerInventory));
+    private record SlotsInMenu(List<Slot> playerSlots, List<Slot> containerSlots) {
 
-            return new SlotsInScreenHandler(inventories.get(true), inventories.get(false));
+        static SlotsInMenu of(AbstractContainerMenu menu) {
+            // Remplace slot.inventory instanceof PlayerInventory → slot.container instanceof Inventory
+            Map<Boolean, List<Slot>> inventories = menu.slots.stream()
+                    .collect(partitioningBy(slot -> slot.container instanceof Inventory));
+
+            return new SlotsInMenu(inventories.get(true), inventories.get(false));
         }
     }
+
+    // ── IPN + LockedSlots check ───────────────────────────────────────────────────
 
     private static boolean isSlotLocked(Slot slot) {
         if (StackToNearbyChests.IS_IPN_MOD_LOADED) {
             try {
                 Class<?> clazz = Class.forName("org.anti_ad.mc.ipnext.event.LockSlotsHandler");
                 Object instance = clazz.getField("INSTANCE").get(null);
-                Boolean slotLocked = (Boolean) clazz.getMethod("isMappedSlotLocked", Slot.class)
+                Boolean slotLocked = (Boolean) clazz
+                        .getMethod("isMappedSlotLocked", Slot.class)
                         .invoke(instance, slot);
-                if (slotLocked) {
-                    return true;
-                }
-            } catch (ClassNotFoundException | NoSuchMethodException | InvocationTargetException |
-                     IllegalAccessException | NoSuchFieldException e) {
-                StackToNearbyChests.LOGGER.warn("An exception occurred when determining whether the slot is locked by IPN mod", e);
+                if (slotLocked) return true;
+            } catch (ClassNotFoundException | NoSuchMethodException | InvocationTargetException
+                     | IllegalAccessException | NoSuchFieldException e) {
+                StackToNearbyChests.LOGGER.warn(
+                        "An exception occurred when determining whether the slot is locked by IPN mod", e);
             }
         }
 

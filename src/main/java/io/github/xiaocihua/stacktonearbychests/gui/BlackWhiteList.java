@@ -1,10 +1,11 @@
 package io.github.xiaocihua.stacktonearbychests.gui;
 
-import io.github.cottonmc.cotton.gui.widget.WLabel;
-import io.github.cottonmc.cotton.gui.widget.data.Axis;
-import io.github.cottonmc.cotton.gui.widget.data.VerticalAlignment;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.narration.NarrationElementOutput;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.Collection;
 import java.util.List;
@@ -13,39 +14,89 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static io.github.xiaocihua.stacktonearbychests.gui.ModOptionsGui.TEXT_COLOR;
+/**
+ * Panneau vertical : titre + boutons +/- + liste sélectionnable.
+ * Remplace BlackWhiteList (LibGui WBoxCustom).
+ */
+public class BlackWhiteList extends AbstractWidget {
 
-public class BlackWhiteList extends WBoxCustom {
+    private final Component title;
+    private final SelectableEntryList<ResourceLocation> list;
+    private final FlatColorButton addButton;
+    private final FlatColorButton removeButton;
 
-    private final SelectableEntryList<Identifier> list;
+    private static final int TITLE_HEIGHT   = 12;
+    private static final int BUTTONS_HEIGHT = 12;
+    private static final int SPACING        = 2;
 
-    public BlackWhiteList(Text title,
+    public BlackWhiteList(Component title,
                           Collection<String> data,
-                          Function<Identifier, SelectableEntryList.Entry<Identifier>> entrySupplier,
-                          Consumer<Consumer<List<Identifier>>> onAddButtonClick,
+                          Function<ResourceLocation, SelectableEntryList.Entry<ResourceLocation>> entrySupplier,
+                          Consumer<Consumer<List<ResourceLocation>>> onAddButtonClick,
                           Consumer<Set<String>> dataChangeListener) {
-        super(Axis.VERTICAL);
+        super(0, 0, 0, 0, title);
+        this.title = title;
 
-        var titleLabel = new WLabel(title, TEXT_COLOR).setVerticalAlignment(VerticalAlignment.CENTER);
-        add(titleLabel, 12);
+        this.list = new SelectableEntryList<>(
+                data.stream().map(ResourceLocation::parse).toList(),
+                entrySupplier);
+        this.list.setChangedListener(ids ->
+                dataChangeListener.accept(ids.stream()
+                        .map(ResourceLocation::toString)
+                        .collect(Collectors.toSet())));
 
-        this.list = new SelectableEntryList<>(data.stream().map(Identifier::of).toList(), entrySupplier)
-                .setChangedListener(identifiers -> dataChangeListener.accept(identifiers.stream().map(Identifier::toString).collect(Collectors.toSet())));
+        this.addButton = new FlatColorButton(Component.literal("+"),
+                btn -> onAddButtonClick.accept(list::addData));
 
-        var buttons = new WBoxCustom(Axis.HORIZONTAL);
+        this.removeButton = new FlatColorButton(Component.literal("-"),
+                btn -> list.removeSelected());
+    }
 
-        var addButton = new FlatColorButton(Text.of("+"))
-                .setOnClick(() -> onAddButtonClick.accept(list::addData));
-        buttons.add(addButton, 12);
+    /** Positionne les sous-widgets selon la taille courante. */
+    public void layout() {
+        int x = getX();
+        int y = getY();
+        int w = width;
 
-        var removeButton = new FlatColorButton(Text.of("-"))
-                .setOnClick(list::removeSelected);
-        buttons.add(removeButton, 12);
+        int buttonW  = 12;
+        int listHeight = height - TITLE_HEIGHT - BUTTONS_HEIGHT - SPACING * 2;
 
-        add(buttons, 12);
+        addButton.setPosition(x, y + TITLE_HEIGHT + SPACING);
+        addButton.setSize(buttonW, BUTTONS_HEIGHT);
 
-        add(list, 100);
+        removeButton.setPosition(x + buttonW + SPACING, y + TITLE_HEIGHT + SPACING);
+        removeButton.setSize(buttonW, BUTTONS_HEIGHT);
 
-        setSpacing(0);
+        list.setPosition(x, y + TITLE_HEIGHT + BUTTONS_HEIGHT + SPACING * 2);
+        list.setSize(w, Math.max(listHeight, 20));
+    }
+
+    @Override
+    public void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // Titre
+        graphics.drawString(Minecraft.getInstance().font, title,
+                getX(), getY() + (TITLE_HEIGHT - 8) / 2, ModOptionsGui.TEXT_COLOR, false);
+
+        addButton.render(graphics, mouseX, mouseY, partialTick);
+        removeButton.render(graphics, mouseX, mouseY, partialTick);
+        list.render(graphics, mouseX, mouseY, partialTick);
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (addButton.mouseClicked(mouseX, mouseY, button)) return true;
+        if (removeButton.mouseClicked(mouseX, mouseY, button)) return true;
+        if (list.mouseClicked(mouseX, mouseY, button)) return true;
+        return false;
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        return list.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
+    @Override
+    protected void updateWidgetNarration(NarrationElementOutput output) {
+        defaultButtonNarrationText(output);
     }
 }

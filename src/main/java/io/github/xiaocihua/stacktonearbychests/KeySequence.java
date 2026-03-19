@@ -1,14 +1,14 @@
 package io.github.xiaocihua.stacktonearbychests;
 
-import io.github.xiaocihua.stacktonearbychests.event.OnKeyCallback;
+import io.github.xiaocihua.stacktonearbychests.event.OnKeyEvent;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.util.InputUtil;
-import net.minecraft.client.util.Window;
-import net.minecraft.text.Text;
-import net.minecraft.util.ActionResult;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.InteractionResult;
+import net.neoforged.neoforge.common.NeoForge;
 import org.lwjgl.glfw.GLFW;
+import com.mojang.blaze3d.platform.InputConstants;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,14 +34,15 @@ public final class KeySequence {
     }
 
     public static void init() {
-        OnKeyCallback.PRESS.register(key -> {
-            PRESSING_KEYS.add(key);
-            return ActionResult.PASS;
+        // Remplace OnKeyCallback.PRESS / RELEASE (events custom NeoForge)
+        NeoForge.EVENT_BUS.addListener((OnKeyEvent.Press event) -> {
+            PRESSING_KEYS.add(event.getKey());
+            event.setResult(InteractionResult.PASS);
         });
 
-        OnKeyCallback.RELEASE.register(key -> {
-            PRESSING_KEYS.rem(key);
-            return ActionResult.PASS;
+        NeoForge.EVENT_BUS.addListener((OnKeyEvent.Release event) -> {
+            PRESSING_KEYS.rem(event.getKey());
+            event.setResult(InteractionResult.PASS);
         });
     }
 
@@ -56,10 +57,10 @@ public final class KeySequence {
     }
 
     public static boolean isKeyPressed(int key) {
-        Window window = MinecraftClient.getInstance().getWindow();
+        long handle = Minecraft.getInstance().getWindow().getWindow();
         return isMouseButton(key)
-                ? GLFW.glfwGetMouseButton(window.getHandle(), key + MOUSE_BUTTON_CODE_OFFSET) == GLFW.GLFW_PRESS
-                : InputUtil.isKeyPressed(window, key);
+                ? GLFW.glfwGetMouseButton(handle, key + MOUSE_BUTTON_CODE_OFFSET) == GLFW.GLFW_PRESS
+                : InputConstants.isKeyDown(handle, key);
     }
 
     private static boolean isMouseButton(int key) {
@@ -95,22 +96,22 @@ public final class KeySequence {
         keys = new ArrayList<>(defaultKeys);
     }
 
-    public Text getLocalizedText() {
+    public Component getLocalizedText() {
         if (keys.isEmpty()) {
-            return Text.translatable("key.keyboard.unknown");
+            return Component.translatable("key.keyboard.unknown");
         }
 
         String localized = keys.stream()
                 .map(key -> {
                     if (isMouseButton(key)) {
-                        return InputUtil.Type.MOUSE.createFromCode(key + MOUSE_BUTTON_CODE_OFFSET);
+                        return InputConstants.Type.MOUSE.getOrCreate(key + MOUSE_BUTTON_CODE_OFFSET);
                     } else {
-                        return InputUtil.Type.KEYSYM.createFromCode(key);
+                        return InputConstants.Type.KEYSYM.getOrCreate(key);
                     }
                 })
-                .map(key -> key.getLocalizedText().getString())
+                .map(key -> key.getDisplayName().getString())
                 .collect(Collectors.joining(" + "));
-        return Text.of(localized);
+        return Component.literal(localized);
     }
 
     public boolean testThenRun(Runnable action) {
@@ -118,42 +119,38 @@ public final class KeySequence {
             action.run();
             return true;
         }
-
         return false;
     }
 
-    public KeySequence register(Supplier<ActionResult> action) {
-        OnKeyCallback.PRESS.register(key -> {
+    public KeySequence register(Supplier<InteractionResult> action) {
+        NeoForge.EVENT_BUS.addListener((OnKeyEvent.Press event) -> {
             if (!keys.isEmpty() && PRESSING_KEYS.equals(keys)) {
-                return action.get();
-            } else {
-                return ActionResult.PASS;
+                event.setResult(action.get());
             }
         });
-
         return this;
     }
 
-    public KeySequence registerOnScreen(Class<? extends Screen> screenClass, Consumer<Screen> action, ActionResult result) {
+    public KeySequence registerOnScreen(Class<? extends Screen> screenClass, Consumer<Screen> action, InteractionResult result) {
         return register(() -> {
-            Screen currentScreen = MinecraftClient.getInstance().currentScreen;
+            Screen currentScreen = Minecraft.getInstance().screen;
             if (screenClass.isInstance(currentScreen)) {
                 action.accept(currentScreen);
                 return result;
             } else {
-                return ActionResult.PASS;
+                return InteractionResult.PASS;
             }
         });
     }
 
-    public KeySequence registerNotOnScreen(Runnable action, ActionResult result) {
+    public KeySequence registerNotOnScreen(Runnable action) {
         return register(() -> {
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client.world != null && client.currentScreen == null) {
+            Minecraft client = Minecraft.getInstance();
+            if (client.level != null && client.screen == null) {
                 action.run();
-                return result;
+                return InteractionResult.SUCCESS;
             } else {
-                return ActionResult.PASS;
+                return InteractionResult.PASS;
             }
         });
     }

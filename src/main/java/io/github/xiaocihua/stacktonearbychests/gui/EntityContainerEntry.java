@@ -1,27 +1,30 @@
 package io.github.xiaocihua.stacktonearbychests.gui;
 
-import io.github.cottonmc.cotton.gui.client.ScreenDrawing;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.entity.EntityType;
-import net.minecraft.registry.Registries;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.EntityType;
 
-public class EntityContainerEntry extends SelectableEntryList.Entry<Identifier>{
+public class EntityContainerEntry extends SelectableEntryList.Entry<ResourceLocation> {
 
-    private final Text name;
+    private final Component name;
 
-    public EntityContainerEntry(Identifier id) {
+    public EntityContainerEntry(ResourceLocation id) {
         super(id);
-        name = Registries.ENTITY_TYPE.getOptionalValue(id).map(EntityType::getName).orElse(Text.of(id.toString()));
+        name = BuiltInRegistries.ENTITY_TYPE.getOptional(id)
+                .map(EntityType::getDescription)
+                .orElse(Component.literal(id.toString()));
     }
 
-    public void paint(DrawContext context, int x, int y, int mouseX, int mouseY) {
-        super.paint(context, x, y, mouseX, mouseY);
-        int inset = 6;
-        int fontWidth = MinecraftClient.getInstance().textRenderer.getWidth(name.asOrderedText());
-        int fontHeight = MinecraftClient.getInstance().textRenderer.fontHeight + 2;
-        ScreenDrawing.drawString(context, name.asOrderedText(), x + width - inset - fontWidth, y + (height - fontHeight) / 2 + 2, TEXT_COLOR);
+    @Override
+    public void render(GuiGraphics graphics, int x, int y, int mouseX, int mouseY) {
+        this.render(graphics, x, y, mouseX, mouseY);
+        var font      = Minecraft.getInstance().font;
+        int inset     = 6;
+        int fontWidth = font.width(name);
+        int fontY     = y + (height - font.lineHeight) / 2;
+        graphics.drawString(font, name, x + width - inset - fontWidth, fontY, ModOptionsGui.TEXT_COLOR, false);
     }
 }

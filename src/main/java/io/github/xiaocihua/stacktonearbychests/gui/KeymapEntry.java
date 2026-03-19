@@ -1,99 +1,141 @@
 package io.github.xiaocihua.stacktonearbychests.gui;
 
-import io.github.cottonmc.cotton.gui.widget.WBox;
-import io.github.cottonmc.cotton.gui.widget.WButton;
-import io.github.cottonmc.cotton.gui.widget.WText;
-import io.github.cottonmc.cotton.gui.widget.data.Axis;
-import io.github.cottonmc.cotton.gui.widget.data.InputResult;
-import io.github.cottonmc.cotton.gui.widget.data.VerticalAlignment;
 import io.github.xiaocihua.stacktonearbychests.KeySequence;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.input.KeyInput;
-import net.minecraft.text.Text;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.narration.NarrationElementOutput;
+import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
-public class KeymapEntry extends WBox {
-    private static final int KEYBINDING_WIDTH = 165;
+/**
+ * Ligne de configuration d'une touche :
+ *   [Label texte]  [Widget de touche]  [Bouton Reset]
+ */
+public class KeymapEntry extends AbstractWidget {
+
+    private static final int KEYBINDING_WIDTH  = 165;
     private static final int RESET_BUTTON_WIDTH = 55;
 
-    private final WText text;
+    private final Component label;
     private final KeyBindingWidget keybinding;
-    private final WButton resetButton;
+    private final FlatColorButton resetButton;
 
-    public KeymapEntry(Text text, KeySequence keySequence) {
-        super(Axis.HORIZONTAL);
+    public KeymapEntry(Component label, KeySequence keySequence) {
+        super(0, 0, 0, 20, label);
+        this.label       = label;
+        this.keybinding  = new KeyBindingWidget(keySequence);
+        this.resetButton = new FlatColorButton(
+                Component.translatable("stacktonearbychests.options.reset"),
+                btn -> keybinding.reset());
+        resetButton.setBorder();
+    }
 
-        this.text = new WText(text, ModOptionsGui.TEXT_COLOR).setVerticalAlignment(VerticalAlignment.CENTER);
-        add(this.text);
+    /** Positionne les sous-widgets. Appeler après setPosition/setWidth. */
+    public void layout() {
+        int textWidth   = width - KEYBINDING_WIDTH - RESET_BUTTON_WIDTH - 4;
+        int kbX         = getX() + textWidth + 2;
+        int resetX      = kbX + KEYBINDING_WIDTH + 2;
 
-        keybinding = new KeyBindingWidget(keySequence);
-        add(keybinding);
+        keybinding.setPosition(kbX,    getY());
+        keybinding.setSize(KEYBINDING_WIDTH, height);
 
-        resetButton = new FlatColorButton(Text.translatable("stack-to-nearby-chests.options.reset"))
-                .setBorder()
-                .setOnClick(keybinding::reset);
-        add(resetButton);
+        resetButton.setPosition(resetX, getY());
+        resetButton.setSize(RESET_BUTTON_WIDTH, height);
     }
 
     @Override
-    public void layout() {
-        text.setSize(width - KEYBINDING_WIDTH - RESET_BUTTON_WIDTH - spacing, height);
-        keybinding.setSize(KEYBINDING_WIDTH - spacing, height);
-        resetButton.setSize(RESET_BUTTON_WIDTH, height);
-        super.layout();
+    public void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // Label
+        int textWidth = width - KEYBINDING_WIDTH - RESET_BUTTON_WIDTH - 4;
+        graphics.drawString(
+                net.minecraft.client.Minecraft.getInstance().font,
+                label,
+                getX(), getY() + (height - 8) / 2,
+                ModOptionsGui.TEXT_COLOR, false);
+
+        keybinding.render(graphics, mouseX, mouseY, partialTick);
+        resetButton.render(graphics, mouseX, mouseY, partialTick);
     }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (keybinding.mouseClicked(mouseX, mouseY, button)) return true;
+        if (resetButton.mouseClicked(mouseX, mouseY, button)) return true;
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keybinding.isFocused()) {
+            return keybinding.keyPressed(keyCode, scanCode, modifiers);
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    protected void updateWidgetNarration(NarrationElementOutput output) {
+        defaultButtonNarrationText(output);
+    }
+
+    // ── Widget de touche ─────────────────────────────────────────────────────────
 
     private static class KeyBindingWidget extends FlatColorButton {
 
         private final KeySequence keySequence;
 
         public KeyBindingWidget(KeySequence keySequence) {
-            super(0xFF_262626, 0x00_000000, 0x00_000000);
+            super(Component.empty(), 0xFF_262626, 0x00_000000, 0x00_000000, btn -> {});
             this.keySequence = keySequence;
-            setLabel();
+            refreshLabel();
         }
 
         public void reset() {
-            this.keySequence.reset();
-            setLabel();
+            keySequence.reset();
+            refreshLabel();
         }
 
         @Override
-        public InputResult onClick(Click click, boolean doubled) {
-            if (isFocused()) {
-                keySequence.addMouseButton(click.button());
-            } else {
-                requestFocus();
+        public void onPress() {
+            if (!isFocused()) {
+                setFocused(true);
             }
-            setLabel();
-
-            return InputResult.PROCESSED;
+            refreshLabel();
         }
 
         @Override
-        public InputResult onKeyPressed(KeyInput input) {
-            switch (input.key()) {
-                case GLFW.GLFW_KEY_ENTER -> releaseFocus();
+        public boolean mouseClicked(double mouseX, double mouseY, int button) {
+            if (!isHovered()) return false;
+            if (isFocused()) {
+                keySequence.addMouseButton(button);
+                refreshLabel();
+                return true;
+            }
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
+
+        @Override
+        public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+            if (!isFocused()) return false;
+            switch (keyCode) {
+                case GLFW.GLFW_KEY_ENTER     -> setFocused(false);
                 case GLFW.GLFW_KEY_BACKSPACE -> keySequence.clear();
-                default -> keySequence.addKey(input.key());
+                default                      -> keySequence.addKey(keyCode);
             }
-            setLabel();
-
-            return InputResult.PROCESSED;
+            refreshLabel();
+            return true;
         }
 
-        private void setLabel() {
-            setLabel(keySequence.getLocalizedText());
+        private void refreshLabel() {
+            setMessage(keySequence.getLocalizedText());
         }
 
         @Override
-        public void paint(DrawContext context, int x, int y, int mouseX, int mouseY) {
+        public void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
             if (isFocused()) {
-                drawBorder(context, x, y, width, height, 0xFF_F5F5F5);
+                drawBorder(graphics, getX(), getY(), width, height, 0xFF_F5F5F5);
             }
-
-            super.paint(context, x, y, mouseX, mouseY);
+            super.renderWidget(graphics, mouseX, mouseY, partialTick);
         }
     }
 }
