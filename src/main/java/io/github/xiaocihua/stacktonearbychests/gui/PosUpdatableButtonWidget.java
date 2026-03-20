@@ -8,23 +8,18 @@ import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.components.WidgetSprites;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
 
+import java.lang.reflect.Method;
 import java.util.Optional;
 import java.util.function.Function;
 
-/**
- * Bouton avec position mise à jour dynamiquement à chaque frame.
- * Remplace PosUpdatableButtonWidget (Fabric Screens API + LibGui Vec2i).
- */
 public class PosUpdatableButtonWidget extends ImageButton {
 
     private final AbstractContainerScreen<?> parent;
     private final Optional<Function<HandledScreenAccessor, Vec2i>> posUpdater;
 
-    private PosUpdatableButtonWidget(int width,
-                                     int height,
+    private PosUpdatableButtonWidget(int width, int height,
                                      WidgetSprites sprites,
                                      OnPress pressAction,
                                      Component text,
@@ -33,70 +28,81 @@ public class PosUpdatableButtonWidget extends ImageButton {
         super(0, 0, width, height, sprites, pressAction, text);
         this.parent     = parent;
         this.posUpdater = posUpdater;
-
-        // Remplace Screens.getButtons(parent).add(this) — NeoForge expose addRenderableWidget
-        // L'ajout est effectué dans Builder.build() via addRenderableWidget
     }
 
     @Override
     public void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        // Mise à jour de la position avant le rendu
-        posUpdater.ifPresent(updater -> {
-            Vec2i pos = updater.apply((HandledScreenAccessor) parent);
+        posUpdater.ifPresent(u -> {
+            Vec2i pos = u.apply((HandledScreenAccessor) parent);
             setPosition(pos.x(), pos.y());
         });
         super.renderWidget(graphics, mouseX, mouseY, partialTick);
     }
 
-    // ── Builder ──────────────────────────────────────────────────────────────────
+    /**
+     * Ajoute le bouton au screen via réflexion — contourne l'accès protégé de
+     * addRenderableWidget() qui n'est pas public dans AbstractContainerScreen.
+     */
+    private static void addToScreen(AbstractContainerScreen<?> screen, PosUpdatableButtonWidget button) {
+        try {
+            Method m = net.minecraft.client.gui.screens.Screen.class
+                    .getDeclaredMethod("addRenderableWidget",
+                            net.minecraft.client.gui.components.events.GuiEventListener.class);
+            m.setAccessible(true);
+            m.invoke(screen, button);
+        } catch (Exception e) {
+            // Fallback : ajout manuel à la liste de renderables via reflection sur children
+            try {
+                var renderables = screen.getClass().getSuperclass().getDeclaredField("renderables");
+                renderables.setAccessible(true);
+                @SuppressWarnings("unchecked")
+                var list = (java.util.List<Object>) renderables.get(screen);
+                list.add(button);
+
+                var children = net.minecraft.client.gui.screens.Screen.class
+                        .getDeclaredField("children");
+                children.setAccessible(true);
+                @SuppressWarnings("unchecked")
+                var clist = (java.util.List<Object>) children.get(screen);
+                clist.add(button);
+            } catch (Exception ex) {
+                io.github.xiaocihua.stacktonearbychests.StackToNearbyChests.LOGGER
+                        .error("Failed to add button to screen", ex);
+            }
+        }
+    }
 
     public static class Builder {
-        private int width  = 16;
-        private int height = 16;
+        private int width = 16, height = 16;
         private WidgetSprites sprites;
-        private OnPress pressAction = button -> {};
+        private OnPress pressAction = b -> {};
         @Nullable private Tooltip tooltip;
         private Component text = Component.empty();
         private final AbstractContainerScreen<?> parent;
         private Optional<Function<HandledScreenAccessor, Vec2i>> posUpdater = Optional.empty();
 
-        public Builder(AbstractContainerScreen<?> parent) {
-            this.parent = parent;
-        }
+        public Builder(AbstractContainerScreen<?> parent) { this.parent = parent; }
 
-        public Builder setSize(int width, int height) {
-            this.width = width; this.height = height; return this;
-        }
-
-        /** Remplace ButtonTextures → WidgetSprites (renommage NeoForge 1.21). */
-        public Builder setTextures(WidgetSprites sprites) {
-            this.sprites = sprites; return this;
-        }
-
-        public Builder setPressAction(OnPress pressAction) {
-            this.pressAction = pressAction; return this;
-        }
+        public Builder setSize(int w, int h)          { this.width = w; this.height = h; return this; }
+        public Builder setTextures(WidgetSprites s)   { this.sprites = s; return this; }
+        public Builder setPressAction(OnPress a)      { this.pressAction = a; return this; }
+        public Builder setText(Component t)           { this.text = t; return this; }
 
         public Builder setTooltip(@Nullable Component content) {
             if (content != null) this.tooltip = Tooltip.create(content);
             return this;
         }
 
-        public Builder setText(Component text) {
-            this.text = text; return this;
-        }
-
-        public Builder setPosUpdater(Function<HandledScreenAccessor, Vec2i> updater) {
-            this.posUpdater = Optional.ofNullable(updater); return this;
+        public Builder setPosUpdater(Function<HandledScreenAccessor, Vec2i> u) {
+            this.posUpdater = Optional.ofNullable(u); return this;
         }
 
         public @Nullable PosUpdatableButtonWidget build() {
             if (sprites == null) return null;
-            PosUpdatableButtonWidget button = new PosUpdatableButtonWidget(
+            var button = new PosUpdatableButtonWidget(
                     width, height, sprites, pressAction, text, parent, posUpdater);
             button.setTooltip(tooltip);
-            // Ajout au screen via la méthode NeoForge (à appeler depuis le screen lui-même)
-            // Le screen doit appeler parent.addRenderableWidget(button)
+            addToScreen(parent, button);
             return button;
         }
     }

@@ -21,470 +21,311 @@ import java.util.List;
 
 import static io.github.xiaocihua.stacktonearbychests.ModOptions.MOD_ID;
 
-/**
- * Interface d'options du mod.
- * Remplace ModOptionsGui (LibGui LightweightGuiDescription).
- * Géré par ModOptionsScreen.
- */
 public class ModOptionsGui {
 
-    public static final String PREFIX = MOD_ID + ".options.";
-    public static final int TEXT_COLOR = 0xFF_F5F5F5;
+    public static final String PREFIX     = MOD_ID + ".options.";
+    public static final int    TEXT_COLOR = 0xFF_F5F5F5;
 
-    private static final ResourceLocation CHECKED = ResourceLocation.fromNamespaceAndPath(MOD_ID,
-            "textures/checkbox_checked.png");
-    private static final ResourceLocation UNCHECKED = ResourceLocation.fromNamespaceAndPath(MOD_ID,
-            "textures/checkbox_unchecked.png");
-
-    private static final int ROOT_WIDTH = 400;
+    private static final int ROOT_WIDTH  = 400;
     private static final int ROOT_HEIGHT = 240;
-    private static final int PADDING = 8;
-    private static final int SPACING = 6;
+    private static final int TAB_HEIGHT  = 16;
 
     private final ModOptions options = ModOptions.get();
+    private final List<AbstractWidget> widgets = new ArrayList<>();
 
     private WTabPanelCustom tabs;
-    private FlatColorButton doneButton;
 
-    @Nullable
-    private EntryPicker currentDialog;
+    @Nullable private EntryPicker currentDialog;
 
-    private Screen screen;
-    private int screenWidth;
-    private int screenHeight;
+    private int rootX;
+    private int rootY;
 
-    // ── Init ─────────────────────────────────────────────────────────────────────
+    public void init(ModOptionsScreen screen, int screenWidth, int screenHeight) {
+        widgets.clear();
+        rootX = (screenWidth  - ROOT_WIDTH)  / 2;
+        rootY = (screenHeight - ROOT_HEIGHT) / 2;
 
-    public void init(Screen screen, int width, int height) {
-        this.screen = screen;
-        this.screenWidth = width;
-        this.screenHeight = height;
+        int tabContentH = ROOT_HEIGHT - 20 - 32 - TAB_HEIGHT;
 
-        int rootX = (width - ROOT_WIDTH) / 2;
-        int rootY = (height - ROOT_HEIGHT) / 2;
-
-        int tabContentH = ROOT_HEIGHT - 20 /* title */ - 16 /* tabs bar */ - 32 /* bottom */;
-
-        tabs = new WTabPanelCustom(ROOT_WIDTH, tabContentH);
+        tabs = new WTabPanelCustom(ROOT_WIDTH, ROOT_HEIGHT - 20 - 32);
         tabs.setPosition(rootX, rootY + 20);
-        tabs.add(buildScrollableTab(buildAppearance(rootX)),
-                b -> b.title(Component.translatable(PREFIX + "appearance")));
-        tabs.add(buildScrollableTab(buildBehavior(rootX)),
-                b -> b.title(Component.translatable(PREFIX + "behavior")));
-        tabs.add(buildScrollableTab(buildKeymap(rootX)),
-                b -> b.title(Component.translatable(PREFIX + "keymap")));
+        tabs.add(createAppearancePanel(tabContentH), b -> b.title(Component.translatable(PREFIX + "appearance")));
+        tabs.add(createBehaviorPanel(tabContentH),   b -> b.title(Component.translatable(PREFIX + "behavior")));
+        tabs.add(createKeymapPanel(tabContentH),     b -> b.title(Component.translatable(PREFIX + "keymap")));
+        widgets.add(tabs);
 
-        doneButton = new FlatColorButton(
+        FlatColorButton doneButton = new FlatColorButton(
                 Component.translatable(PREFIX + "done"),
-                btn -> {
-                    options.write();
-                    Minecraft.getInstance().screen.onClose();
-                });
+                btn -> { options.write(); screen.onClose(); });
         doneButton.setBorder();
-        doneButton.setPosition(rootX + (ROOT_WIDTH - 160) / 2,
-                rootY + ROOT_HEIGHT - 32 + 6);
+        doneButton.setPosition(rootX + (ROOT_WIDTH - 160) / 2, rootY + ROOT_HEIGHT - 28);
         doneButton.setSize(160, 20);
+        widgets.add(doneButton);
     }
 
-    /** Enveloppe une liste de widgets dans un panneau scrollable vertical. */
-    private ScrollablePanel buildScrollableTab(List<AbstractWidget> widgets) {
-        return new ScrollablePanel(widgets, ROOT_WIDTH - PADDING * 2, Integer.MAX_VALUE);
+    private ScrollablePanel createAppearancePanel(int h) {
+        var p = new ScrollablePanel(ROOT_WIDTH - 8, h);
+        p.addWidget(createFavoriteStyleButton());
+        p.addWidget(createCheckbox("alwaysShowMarkersForFavoritedItems",    options.appearance.alwaysShowMarkersForFavoritedItems));
+        p.addWidget(createCheckbox("enableFavoritingSoundEffect",           options.appearance.enableFavoritingSoundEffect));
+        p.addWidget(createCheckbox("showStackToNearbyContainersButton",     options.appearance.showStackToNearbyContainersButton));
+        p.addWidget(createCheckbox("showRestockFromNearbyContainersButton", options.appearance.showRestockFromNearbyContainersButton));
+        p.addWidget(createCheckbox("showQuickStackButton",                  options.appearance.showQuickStackButton));
+        p.addWidget(createCheckbox("showRestockButton",                     options.appearance.showRestockButton));
+        p.addWidget(createCheckbox("showTheButtonsOnTheCreativeInventoryScreen", options.appearance.showTheButtonsOnTheCreativeInventoryScreen));
+        p.addWidget(createCheckbox("showButtonTooltip",                     options.appearance.showButtonTooltip));
+        String posTooltip = PREFIX + "buttonPos.tooltip";
+        p.addWidget(createIntTextField("stackToNearbyContainersButtonPosX",    options.appearance.stackToNearbyContainersButtonPosX));
+        p.addWidget(createIntTextField("stackToNearbyContainersButtonPosY",    options.appearance.stackToNearbyContainersButtonPosY));
+        p.addWidget(createIntTextField("restockFromNearbyContainersButtonPosX",options.appearance.restockFromNearbyContainersButtonPosX));
+        p.addWidget(createIntTextField("restockFromNearbyContainersButtonPosY",options.appearance.restockFromNearbyContainersButtonPosY));
+        p.addWidget(createIntTextField("quickStackButtonPosX", options.appearance.quickStackButtonPosX).withTooltip(posTooltip));
+        p.addWidget(createIntTextField("quickStackButtonPosY", options.appearance.quickStackButtonPosY).withTooltip(posTooltip));
+        p.addWidget(createIntTextField("restockButtonPosX",    options.appearance.restockButtonPosX).withTooltip(posTooltip));
+        p.addWidget(createIntTextField("restockButtonPosY",    options.appearance.restockButtonPosY).withTooltip(posTooltip));
+        return p;
     }
 
-    // ── Onglets
-    // ───────────────────────────────────────────────────────────────────
-
-    private List<AbstractWidget> buildAppearance(int rootX) {
-        List<AbstractWidget> list = new ArrayList<>();
-        int w = ROOT_WIDTH - PADDING * 2;
-
-        list.add(new FavoriteItemStyleButton(w));
-        addCheckbox(list, "alwaysShowMarkersForFavoritedItems", options.appearance.alwaysShowMarkersForFavoritedItems,
-                w);
-        addCheckbox(list, "enableFavoritingSoundEffect", options.appearance.enableFavoritingSoundEffect, w);
-        addCheckbox(list, "showStackToNearbyContainersButton", options.appearance.showStackToNearbyContainersButton, w);
-        addCheckbox(list, "showRestockFromNearbyContainersButton",
-                options.appearance.showRestockFromNearbyContainersButton, w);
-        addCheckbox(list, "showQuickStackButton", options.appearance.showQuickStackButton, w);
-        addCheckbox(list, "showRestockButton", options.appearance.showRestockButton, w);
-        addCheckbox(list, "showTheButtonsOnTheCreativeInventoryScreen",
-                options.appearance.showTheButtonsOnTheCreativeInventoryScreen, w);
-        addCheckbox(list, "showButtonTooltip", options.appearance.showButtonTooltip, w);
-
-        String posTip = PREFIX + "buttonPos.tooltip";
-        addIntField(list, "stackToNearbyContainersButtonPosX", options.appearance.stackToNearbyContainersButtonPosX, w,
-                null);
-        addIntField(list, "stackToNearbyContainersButtonPosY", options.appearance.stackToNearbyContainersButtonPosY, w,
-                null);
-        addIntField(list, "restockFromNearbyContainersButtonPosX",
-                options.appearance.restockFromNearbyContainersButtonPosX, w, null);
-        addIntField(list, "restockFromNearbyContainersButtonPosY",
-                options.appearance.restockFromNearbyContainersButtonPosY, w, null);
-        addIntField(list, "quickStackButtonPosX", options.appearance.quickStackButtonPosX, w, posTip);
-        addIntField(list, "quickStackButtonPosY", options.appearance.quickStackButtonPosY, w, posTip);
-        addIntField(list, "restockButtonPosX", options.appearance.restockButtonPosX, w, posTip);
-        addIntField(list, "restockButtonPosY", options.appearance.restockButtonPosY, w, posTip);
-        return list;
+    private ScrollablePanel createBehaviorPanel(int h) {
+        var p = new ScrollablePanel(ROOT_WIDTH - 8, h);
+        var si = createIntTextField("searchInterval", options.behavior.searchInterval)
+                .withTooltip(PREFIX + "searchInterval.tooltip");
+        si.getTextField().setFilter(text -> NumberUtils.toInt(text, -1) >= 0);
+        p.addWidget(si);
+        p.addWidget(createCheckbox("supportForContainerEntities",             options.behavior.supportForContainerEntities));
+        p.addWidget(createCheckbox("doNotQuickStackItemsFromTheHotbar",       options.behavior.doNotQuickStackItemsFromTheHotbar));
+        p.addWidget(createCheckbox("enableItemFavoriting",                    options.behavior.enableItemFavoriting));
+        p.addWidget(createCheckbox("favoriteItemsCannotBePickedUp",           options.behavior.favoriteItemsCannotBePickedUp));
+        p.addWidget(createCheckbox("favoriteItemStacksCannotBeThrown",        options.behavior.favoriteItemStacksCannotBeThrown));
+        p.addWidget(createCheckbox("favoriteItemStacksCannotBeQuickMoved",    options.behavior.favoriteItemStacksCannotBeQuickMoved));
+        p.addWidget(createCheckbox("favoriteItemStacksCannotBeSwapped",       options.behavior.favoriteItemStacksCannotBeSwapped));
+        p.addWidget(createCheckbox("favoriteItemsCannotBeSwappedWithOffhand", options.behavior.favoriteItemsCannotBeSwappedWithOffhand));
+        p.addWidget(bwl(PREFIX + "stackingTargets",         options.behavior.stackingTargets,         BlockContainerEntry::new, EntryPicker.BlockContainerPicker::new, d -> options.behavior.stackingTargets = d));
+        p.addWidget(bwl(PREFIX + "stackingTargetEntities",  options.behavior.stackingTargetEntities,  EntityContainerEntry::new, EntryPicker.EntityContainerPicker::new, d -> options.behavior.stackingTargetEntities = d));
+        p.addWidget(bwl(PREFIX + "itemsThatWillNotBeStacked",options.behavior.itemsThatWillNotBeStacked, ItemEntry::new, EntryPicker.ItemPicker::new, d -> options.behavior.itemsThatWillNotBeStacked = d));
+        p.addWidget(bwl(PREFIX + "restockingSources",       options.behavior.restockingSources,       BlockContainerEntry::new, EntryPicker.BlockContainerPicker::new, d -> options.behavior.restockingSources = d));
+        p.addWidget(bwl(PREFIX + "restockingSourceEntities",options.behavior.restockingSourceEntities,EntityContainerEntry::new, EntryPicker.EntityContainerPicker::new, d -> options.behavior.restockingSourceEntities = d));
+        p.addWidget(bwl(PREFIX + "itemsThatWillNotBeRestocked",options.behavior.itemsThatWillNotBeRestocked, ItemEntry::new, EntryPicker.ItemPicker::new, d -> options.behavior.itemsThatWillNotBeRestocked = d));
+        return p;
     }
 
-    private List<AbstractWidget> buildBehavior(int rootX) {
-        List<AbstractWidget> list = new ArrayList<>();
-        int w = ROOT_WIDTH - PADDING * 2;
-
-        var searchInterval = new TextFieldWithLabel(
-                Component.translatable(PREFIX + "searchInterval"), TEXT_COLOR,
-                options.behavior.searchInterval::reset);
-        searchInterval.getTextField().setValue(String.valueOf(options.behavior.searchInterval.intValue()));
-        searchInterval.getTextField()
-                .setResponder(t -> options.behavior.searchInterval.setValue(NumberUtils.toInt(t, 0)));
-        searchInterval.withTooltip(PREFIX + "searchInterval.tooltip");
-        list.add(searchInterval);
-
-        addCheckbox(list, "supportForContainerEntities", options.behavior.supportForContainerEntities, w);
-        addCheckbox(list, "doNotQuickStackItemsFromTheHotbar", options.behavior.doNotQuickStackItemsFromTheHotbar, w);
-        addCheckbox(list, "enableItemFavoriting", options.behavior.enableItemFavoriting, w);
-        addCheckbox(list, "favoriteItemsCannotBePickedUp", options.behavior.favoriteItemsCannotBePickedUp, w);
-        addCheckbox(list, "favoriteItemStacksCannotBeThrown", options.behavior.favoriteItemStacksCannotBeThrown, w);
-        addCheckbox(list, "favoriteItemStacksCannotBeQuickMoved", options.behavior.favoriteItemStacksCannotBeQuickMoved,
-                w);
-        addCheckbox(list, "favoriteItemStacksCannotBeSwapped", options.behavior.favoriteItemStacksCannotBeSwapped, w);
-        addCheckbox(list, "favoriteItemsCannotBeSwappedWithOffhand",
-                options.behavior.favoriteItemsCannotBeSwappedWithOffhand, w);
-
-        list.add(new BlackWhiteList(Component.translatable(PREFIX + "stackingTargets"),
-                options.behavior.stackingTargets, BlockContainerEntry::new,
-                c -> openDialog(new EntryPicker.BlockContainerPicker(c)),
-                data -> options.behavior.stackingTargets = data));
-        list.add(new BlackWhiteList(Component.translatable(PREFIX + "stackingTargetEntities"),
-                options.behavior.stackingTargetEntities, EntityContainerEntry::new,
-                c -> openDialog(new EntryPicker.EntityContainerPicker(c)),
-                data -> options.behavior.stackingTargetEntities = data));
-        list.add(new BlackWhiteList(Component.translatable(PREFIX + "itemsThatWillNotBeStacked"),
-                options.behavior.itemsThatWillNotBeStacked, ItemEntry::new,
-                c -> openDialog(new EntryPicker.ItemPicker(c)),
-                data -> options.behavior.itemsThatWillNotBeStacked = data));
-        list.add(new BlackWhiteList(Component.translatable(PREFIX + "restockingSources"),
-                options.behavior.restockingSources, BlockContainerEntry::new,
-                c -> openDialog(new EntryPicker.BlockContainerPicker(c)),
-                data -> options.behavior.restockingSources = data));
-        list.add(new BlackWhiteList(Component.translatable(PREFIX + "restockingSourceEntities"),
-                options.behavior.restockingSourceEntities, EntityContainerEntry::new,
-                c -> openDialog(new EntryPicker.EntityContainerPicker(c)),
-                data -> options.behavior.restockingSourceEntities = data));
-        list.add(new BlackWhiteList(Component.translatable(PREFIX + "itemsThatWillNotBeRestocked"),
-                options.behavior.itemsThatWillNotBeRestocked, ItemEntry::new,
-                c -> openDialog(new EntryPicker.ItemPicker(c)),
-                data -> options.behavior.itemsThatWillNotBeRestocked = data));
-        return list;
+    private <E extends SelectableEntryList.Entry<ResourceLocation>> BlackWhiteList bwl(
+            String labelKey,
+            java.util.Set<String> data,
+            java.util.function.Function<ResourceLocation, E> entryFn,
+            java.util.function.Function<java.util.function.Consumer<java.util.List<ResourceLocation>>, EntryPicker> pickerFn,
+            java.util.function.Consumer<java.util.Set<String>> setter) {
+        return new BlackWhiteList(Component.translatable(labelKey), data,
+                (java.util.function.Function) entryFn,
+                c -> openDialog(pickerFn.apply(c)),
+                setter);
     }
 
-    private List<AbstractWidget> buildKeymap(int rootX) {
-        List<AbstractWidget> list = new ArrayList<>();
-        int w = ROOT_WIDTH - PADDING * 2;
-
-        addKeymap(list, "stackToNearbyContainers", options.keymap.stackToNearbyContainersKey, w);
-        addKeymap(list, "quickStackItemsOfTheSameTypeAsTheOneUnderTheCursorToNearbyContainers",
-                options.keymap.quickStackItemsOfTheSameTypeAsTheOneUnderTheCursorToNearbyContainersKey, w);
-        addKeymap(list, "restockFromNearbyContainers", options.keymap.restockFromNearbyContainersKey, w);
-        addKeymap(list, "quickStack", options.keymap.quickStackKey, w);
-        addKeymap(list, "restock", options.keymap.restockKey, w);
-        addKeymap(list, "markAsFavorite", options.keymap.markAsFavoriteKey, w);
-        addKeymap(list, "showMarkersForFavoritedItems", options.keymap.showMarkersForFavoritedItemsKey, w);
-        addKeymap(list, "openModOptionsScreen", options.keymap.openModOptionsScreenKey, w);
-
-        list.add(new HintLabel(Component.translatable(PREFIX + "keyMapHint")
-                .withStyle(Style.EMPTY.withItalic(true)), 0xFF_BFBFBF, w));
-        return list;
+    private ScrollablePanel createKeymapPanel(int h) {
+        var p = new ScrollablePanel(ROOT_WIDTH - 8, h);
+        p.addWidget(new KeymapEntry(Component.translatable(PREFIX + "stackToNearbyContainers"), options.keymap.stackToNearbyContainersKey));
+        p.addWidget(new KeymapEntry(Component.translatable(PREFIX + "quickStackItemsOfTheSameTypeAsTheOneUnderTheCursorToNearbyContainers"), options.keymap.quickStackItemsOfTheSameTypeAsTheOneUnderTheCursorToNearbyContainersKey));
+        p.addWidget(new KeymapEntry(Component.translatable(PREFIX + "restockFromNearbyContainers"), options.keymap.restockFromNearbyContainersKey));
+        p.addWidget(new KeymapEntry(Component.translatable(PREFIX + "quickStack"),                  options.keymap.quickStackKey));
+        p.addWidget(new KeymapEntry(Component.translatable(PREFIX + "restock"),                     options.keymap.restockKey));
+        p.addWidget(new KeymapEntry(Component.translatable(PREFIX + "markAsFavorite"),              options.keymap.markAsFavoriteKey));
+        p.addWidget(new KeymapEntry(Component.translatable(PREFIX + "showMarkersForFavoritedItems"),options.keymap.showMarkersForFavoritedItemsKey));
+        p.addWidget(new KeymapEntry(Component.translatable(PREFIX + "openModOptionsScreen"),        options.keymap.openModOptionsScreenKey));
+        p.addLabel(Component.translatable(PREFIX + "keyMapHint").setStyle(Style.EMPTY.withItalic(true)), 0xFF_BFBFBF);
+        return p;
     }
 
-    // ── Helpers
-    // ───────────────────────────────────────────────────────────────────
-
-    private void addCheckbox(List<AbstractWidget> list, String key, MutableBoolean value, int w) {
-        SimpleCheckbox sc = new SimpleCheckbox(Component.translatable(PREFIX + key), value, w);
-        list.add(new SimpleCheckbox(Component.translatable(PREFIX + key), value, w));
+    private AbstractWidget createFavoriteStyleButton() {
+        int[] index = { LockedSlots.FAVORITE_ITEM_TAGS.indexOf(options.appearance.favoriteItemStyle) };
+        FlatColorButton btn = new FlatColorButton(
+                Component.translatable(MOD_ID + ".resource." + options.appearance.favoriteItemStyle.getPath()),
+                b -> {
+                    // ✅ fix: Screen.hasShiftDown() méthode statique
+                    boolean shift = Screen.hasShiftDown();
+                    index[0] = Mth.positiveModulo(index[0] + (shift ? -1 : 1),
+                            LockedSlots.FAVORITE_ITEM_TAGS.size());
+                    ResourceLocation id = LockedSlots.FAVORITE_ITEM_TAGS.get(index[0]);
+                    options.appearance.favoriteItemStyle = id;
+                    b.setMessage(Component.translatable(MOD_ID + ".resource." + id.getPath()));
+                }) {
+            @Override
+            public void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+                graphics.blit(ResourceLocation.fromNamespaceAndPath(MOD_ID, "textures/slot_background.png"),
+                        getX() + 1, getY() + 1, 0, 0, 18, 18, 18, 18);
+                super.renderWidget(graphics, mouseX, mouseY, partialTick);
+            }
+        };
+        btn.setBorder();
+        return btn;
     }
 
-    private void addIntField(List<AbstractWidget> list, String key,
-            ModOptions.IntOption value, int w, @Nullable String tooltipKey) {
-        var field = new TextFieldWithLabel(
-                Component.translatable(PREFIX + key), TEXT_COLOR, value::reset);
+    private Checkbox createCheckbox(String key, MutableBoolean value) {
+        // ✅ fix: Checkbox.builder() API correcte pour 1.21.1
+        return Checkbox.builder(Component.translatable(PREFIX + key), Minecraft.getInstance().font)
+                .selected(value.booleanValue())
+                .onValueChange((cb, v) -> value.setValue(v))
+                .build();
+    }
+
+    private TextFieldWithLabel createIntTextField(String key, ModOptions.IntOption value) {
+        var field = new TextFieldWithLabel(Component.translatable(PREFIX + key), TEXT_COLOR, value::reset);
         field.getTextField().setValue(String.valueOf(value.intValue()));
-        field.getTextField().setResponder(t -> {
-            if (t.matches("-?\\d+"))
-                value.setValue(NumberUtils.toInt(t));
+        field.getTextField().setResponder(text -> value.setValue(NumberUtils.toInt(text)));
+        field.getTextField().setFilter(text -> text.matches("-?\\d*"));
+        return field;
+    }
+
+    public void openDialog(EntryPicker dialog) {
+        if (currentDialog != null) return;
+        currentDialog = dialog;
+        // ✅ fix: utiliser getWidth()/getHeight() au lieu des champs protégés
+        dialog.setPosition(
+                rootX + (ROOT_WIDTH  - dialog.getWidth())  / 2,
+                rootY + (ROOT_HEIGHT - dialog.getHeight()) / 2);
+        dialog.setOnClose(() -> {
+            currentDialog = null;
+            widgets.remove(dialog);
         });
-        if (tooltipKey != null)
-            field.withTooltip(tooltipKey);
-        list.add(field);
+        dialog.layout();
+        widgets.add(dialog);
     }
-
-    private void addKeymap(List<AbstractWidget> list, String key,
-            io.github.xiaocihua.stacktonearbychests.KeySequence seq, int w) {
-        var entry = new KeymapEntry(Component.translatable(PREFIX + key), seq);
-        entry.setWidth(w);
-        entry.layout();
-        list.add(entry);
-    }
-
-    // ── Rendu
-    // ─────────────────────────────────────────────────────────────────────
 
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        int rootX = (screenWidth - ROOT_WIDTH) / 2;
-        int rootY = (screenHeight - ROOT_HEIGHT) / 2;
-
-        graphics.fill(rootX, rootY, rootX + ROOT_WIDTH, rootY + ROOT_HEIGHT, 0xFF_1E1E1E);
+        graphics.fill(rootX, rootY, rootX + ROOT_WIDTH, rootY + ROOT_HEIGHT, 0xFF_2B2B2B);
         drawBorder(graphics, rootX, rootY, ROOT_WIDTH, ROOT_HEIGHT);
-
         graphics.drawCenteredString(Minecraft.getInstance().font,
                 Component.translatable(PREFIX + "title"),
                 rootX + ROOT_WIDTH / 2, rootY + 6, TEXT_COLOR);
-
-        tabs.render(graphics, mouseX, mouseY, partialTick);
-        doneButton.render(graphics, mouseX, mouseY, partialTick);
-
+        for (AbstractWidget w : widgets) {
+            if (w == currentDialog) continue;
+            w.render(graphics, mouseX, mouseY, partialTick);
+        }
         if (currentDialog != null) {
             graphics.fill(rootX, rootY, rootX + ROOT_WIDTH, rootY + ROOT_HEIGHT, 0x88_000000);
-            currentDialog.renderWidget(graphics, mouseX, mouseY, partialTick);
+            currentDialog.render(graphics, mouseX, mouseY, partialTick);
         }
     }
 
-    private void drawBorder(GuiGraphics g, int x, int y, int w, int h) {
-        int c = 0xFF_444444;
-        g.fill(x, y, x + w, y + 1, c);
-        g.fill(x, y + h - 1, x + w, y + h, c);
-        g.fill(x, y, x + 1, y + h, c);
-        g.fill(x + w - 1, y, x + w, y + h, c);
-    }
-
-    // ── Événements
-    // ────────────────────────────────────────────────────────────────
-
-    public boolean mouseClicked(double mx, double my, int btn) {
-        if (currentDialog != null)
-            return currentDialog.mouseClicked(mx, my, btn);
-        if (tabs.mouseClicked(mx, my, btn))
-            return true;
-        return doneButton.mouseClicked(mx, my, btn);
+    public boolean mouseClicked(double mx, double my, int button) {
+        if (currentDialog != null) return currentDialog.mouseClicked(mx, my, button);
+        for (int i = widgets.size() - 1; i >= 0; i--) {
+            if (widgets.get(i).mouseClicked(mx, my, button)) return true;
+        }
+        return false;
     }
 
     public boolean mouseScrolled(double mx, double my, double sx, double sy) {
-        if (currentDialog != null)
-            return currentDialog.mouseScrolled(mx, my, sx, sy);
-        return tabs.mouseScrolled(mx, my, sx, sy);
+        if (currentDialog != null) return currentDialog.mouseScrolled(mx, my, sx, sy);
+        for (AbstractWidget w : widgets) { if (w.mouseScrolled(mx, my, sx, sy)) return true; }
+        return false;
     }
 
-    public boolean keyPressed(int keyCode, int scan, int mods) {
-        if (currentDialog != null)
-            return currentDialog.keyPressed(keyCode, scan, mods);
-        return tabs.keyPressed(keyCode, scan, mods);
+    public boolean keyPressed(int k, int s, int m) {
+        if (currentDialog != null) return currentDialog.keyPressed(k, s, m);
+        for (AbstractWidget w : widgets) { if (w.keyPressed(k, s, m)) return true; }
+        return false;
     }
 
-    public boolean charTyped(char c, int mods) {
-        if (currentDialog != null)
-            return currentDialog.charTyped(c, mods);
-        return tabs.charTyped(c, mods);
+    public boolean charTyped(char c, int m) {
+        if (currentDialog != null) return currentDialog.charTyped(c, m);
+        for (AbstractWidget w : widgets) { if (w.charTyped(c, m)) return true; }
+        return false;
     }
 
-    public void onClose() {
-        options.write();
+    public void onClose() { options.write(); }
+
+    private void drawBorder(GuiGraphics g, int x, int y, int w, int h) {
+        int c = 0xFF_555555;
+        g.fill(x, y, x+w, y+1, c); g.fill(x, y+h-1, x+w, y+h, c);
+        g.fill(x, y, x+1, y+h, c); g.fill(x+w-1, y, x+w, y+h, c);
     }
 
-    // ── Dialog
-    // ────────────────────────────────────────────────────────────────────
+    // ── ScrollablePanel ───────────────────────────────────────────────────────────
 
-    public void openDialog(EntryPicker dialog) {
-        if (currentDialog != null)
-            return;
-        currentDialog = dialog;
-        int rootX = (screenWidth - ROOT_WIDTH) / 2;
-        int rootY = (screenHeight - ROOT_HEIGHT) / 2;
-        dialog.setPosition(rootX + (ROOT_WIDTH - dialog.getWidth()) / 2,
-                rootY + (ROOT_HEIGHT - dialog.getHeight()) / 2);
-        dialog.layout();
-        dialog.setOnClose(() -> currentDialog = null);
-    }
-
-    // ── Widgets internes
-    // ──────────────────────────────────────────────────────────
-
-    /** Panneau scrollable vertical contenant une liste de widgets. */
-    private static class ScrollablePanel extends AbstractWidget {
-        private final List<AbstractWidget> widgets;
+    public static class ScrollablePanel extends AbstractWidget {
+        private static final int SCROLLBAR_W  = 8;
+        private static final int ITEM_SPACING = 4;
+        private final List<AbstractWidget> items = new ArrayList<>();
         private int scrollOffset = 0;
-        private static final int ROW_H = 22;
-        private static final int SCROLL_W = 8;
 
-        ScrollablePanel(List<AbstractWidget> widgets, int w, int h) {
-            super(0, 0, w, h, Component.empty());
-            this.widgets = widgets;
+        public ScrollablePanel(int width, int height) {
+            super(0, 0, width, height, Component.empty());
+        }
+
+        public void addWidget(AbstractWidget w) { items.add(w); }
+
+        public void addLabel(Component text, int color) {
+            items.add(new LabelWidget(text, color));
         }
 
         @Override
         public void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-            int x = getX();
-            int y = getY();
-            int usableH = height;
-            graphics.enableScissor(x, y, x + width, y + usableH);
-
-            int currentY = y - scrollOffset;
-            for (AbstractWidget w : widgets) {
-                int wH = Math.max(w.getHeight(), ROW_H);
-                w.setPosition(x + PADDING, currentY + (wH - w.getHeight()) / 2);
-                w.setWidth(width - PADDING * 2 - SCROLL_W);
-                if (w instanceof TextFieldWithLabel tf)
-                    tf.layout();
-                if (w instanceof KeymapEntry ke)
-                    ke.layout();
-                if (w instanceof BlackWhiteList bwl)
-                    bwl.layout();
-                w.render(graphics, mouseX, mouseY, partialTick);
-                currentY += wH + SPACING;
+            int x = getX(); int y = getY();
+            int contentW = width - SCROLLBAR_W;
+            graphics.enableScissor(x, y, x + width, y + height);
+            int curY = y - scrollOffset;
+            for (AbstractWidget w : items) {
+                w.setPosition(x, curY);
+                w.setWidth(contentW);
+                if (w instanceof TextFieldWithLabel tf) tf.layout();
+                if (w instanceof KeymapEntry ke)        ke.layout();
+                if (w instanceof BlackWhiteList bwl)    bwl.layout();
+                if (curY + w.getHeight() > y && curY < y + height) {
+                    w.render(graphics, mouseX, mouseY, partialTick);
+                }
+                curY += w.getHeight() + ITEM_SPACING;
             }
-
             graphics.disableScissor();
-            drawScrollbar(graphics, x + width - SCROLL_W, y, usableH, currentY - y + scrollOffset);
-        }
-
-        private void drawScrollbar(GuiGraphics g, int x, int y, int h, int totalH) {
-            g.fill(x, y, x + SCROLL_W, y + h, 0xFF_1A1A1A);
-            if (totalH <= h)
-                return;
-            float ratio = (float) h / totalH;
-            int handleH = Math.max(6, (int) (h * ratio));
-            float sRatio = (float) scrollOffset / (totalH - h);
-            int handleY = y + (int) ((h - handleH) * sRatio);
-            g.fill(x + 1, handleY, x + SCROLL_W - 1, handleY + handleH, 0xFF_515151);
-        }
-
-        @Override
-        public boolean mouseScrolled(double mx, double my, double sx, double sy) {
-            if (!isMouseOver(mx, my))
-                return false;
-            int totalH = widgets.stream().mapToInt(w -> Math.max(w.getHeight(), ROW_H) + SPACING).sum();
-            scrollOffset = Mth.clamp((int) (scrollOffset - sy * 10), 0, Math.max(0, totalH - height));
-            return true;
-        }
-
-        @Override
-        public boolean mouseClicked(double mx, double my, int btn) {
-            for (AbstractWidget w : widgets) {
-                if (w.mouseClicked(mx, my, btn))
-                    return true;
+            int totalH = totalHeight();
+            if (totalH > height) {
+                graphics.fill(x + contentW, y, x + width, y + height, 0xFF_262626);
+                int handleH = Math.max(6, height * height / totalH);
+                int handleY = y + (height - handleH) * scrollOffset / Math.max(1, totalH - height);
+                graphics.fill(x + contentW + 1, handleY, x + width - 1, handleY + handleH, 0xFF_515151);
             }
+        }
+
+        private int totalHeight() {
+            return items.stream().mapToInt(w -> w.getHeight() + ITEM_SPACING).sum();
+        }
+
+        @Override
+        public boolean mouseClicked(double mx, double my, int button) {
+            if (!isMouseOver(mx, my)) return false;
+            for (AbstractWidget w : items) { if (w.mouseClicked(mx, my, button)) return true; }
             return false;
         }
 
         @Override
+        public boolean mouseScrolled(double mx, double my, double sx, double sy) {
+            if (!isMouseOver(mx, my)) return false;
+            int totalH = totalHeight();
+            if (totalH > height) scrollOffset = Mth.clamp((int)(scrollOffset - sy * 10), 0, totalH - height);
+            return true;
+        }
+
+        @Override
         public boolean keyPressed(int k, int s, int m) {
-            for (AbstractWidget w : widgets) {
-                if (w.keyPressed(k, s, m))
-                    return true;
-            }
+            for (AbstractWidget w : items) { if (w.isFocused() && w.keyPressed(k, s, m)) return true; }
             return false;
         }
 
         @Override
         public boolean charTyped(char c, int m) {
-            for (AbstractWidget w : widgets) {
-                if (w.charTyped(c, m))
-                    return true;
-            }
+            for (AbstractWidget w : items) { if (w.isFocused() && w.charTyped(c, m)) return true; }
             return false;
         }
 
         @Override
-        protected void updateWidgetNarration(NarrationElementOutput o) {
-        }
-    }
+        protected void updateWidgetNarration(NarrationElementOutput o) { defaultButtonNarrationText(o); }
 
-    /** Checkbox simple liée à un MutableBoolean. */
-    private static class SimpleCheckbox extends AbstractWidget {
-        private final MutableBoolean value;
-        private final Component label;
-
-        SimpleCheckbox(Component label, MutableBoolean value, int w) {
-            super(0, 0, w, 20, label);
-            this.value = value;
-            this.label = label;
-        }
-
-        @Override
-        protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-            boolean hovered = isHovered();
-            boolean checked = value.booleanValue();
-
-            // Dessin de la case
-            int boxSize = 12;
-            int boxX = getX();
-            int boxY = getY() + (height - boxSize) / 2;
-
-            graphics.fill(boxX, boxY, boxX + boxSize, boxY + boxSize, 0xFF000000); // bordure noire
-            graphics.fill(boxX + 1, boxY + 1, boxX + boxSize - 1, boxY + boxSize - 1,
-                    checked ? 0xFF00FF00 : 0xFFFFFFFF); // vert si coché, blanc sinon
-
-            // Label
-            graphics.drawString(Minecraft.getInstance().font,
-                    label, boxX + boxSize + 4, getY() + 6, 0xFFFFFF);
-        }
-
-        @Override
-        public void onClick(double mouseX, double mouseY) {
-            value.setValue(!value.booleanValue());
-        }
-
-        @Override
-        protected void updateWidgetNarration(NarrationElementOutput narration) {
-            // Rien à narrer pour ce widget custom
-        }
-    }
-
-    /** Bouton cyclique pour le style des favoris. */
-    private class FavoriteItemStyleButton extends FlatColorButton {
-        private int index;
-
-        FavoriteItemStyleButton(int w) {
-            super(Component.translatable(PREFIX + "favoriteItemStyle"), btn -> {
-            });
-            index = Math.max(0, LockedSlots.FAVORITE_ITEM_TAGS.indexOf(options.appearance.favoriteItemStyle));
-            setSize(w, 20);
-            setBorder();
-            refreshLabel();
-        }
-
-        @Override
-        public void onPress() {
-            boolean shift = Screen.hasShiftDown();
-            index = Mth.positiveModulo(index + (shift ? -1 : 1), LockedSlots.FAVORITE_ITEM_TAGS.size());
-            options.appearance.favoriteItemStyle = LockedSlots.FAVORITE_ITEM_TAGS.get(index);
-            refreshLabel();
-        }
-
-        private void refreshLabel() {
-            ResourceLocation id = LockedSlots.FAVORITE_ITEM_TAGS.get(index);
-            setMessage(Component.translatable(MOD_ID + ".resource." + id.getPath()));
-        }
-    }
-
-    /** Label italique pour les hints. */
-    private static class HintLabel extends AbstractWidget {
-        private final Component text;
-        private final int color;
-
-        HintLabel(Component text, int color, int w) {
-            super(0, 0, w, 12, text);
-            this.text = text;
-            this.color = color;
-        }
-
-        @Override
-        public void renderWidget(GuiGraphics graphics, int mx, int my, float pt) {
-            graphics.drawString(Minecraft.getInstance().font, text, getX(), getY() + 2, color, false);
-        }
-
-        @Override
-        protected void updateWidgetNarration(NarrationElementOutput o) {
+        private static class LabelWidget extends AbstractWidget {
+            private final Component text; private final int color;
+            LabelWidget(Component t, int c) { super(0, 0, 0, 10, t); text = t; color = c; }
+            @Override public void renderWidget(GuiGraphics g, int mx, int my, float pt) {
+                g.drawString(Minecraft.getInstance().font, text, getX(), getY(), color, false);
+            }
+            @Override protected void updateWidgetNarration(NarrationElementOutput o) {}
         }
     }
 }

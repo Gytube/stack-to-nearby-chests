@@ -1,5 +1,6 @@
 package io.github.xiaocihua.stacktonearbychests;
 
+import io.github.xiaocihua.stacktonearbychests.compat.ModConfigScreenFactory;
 import io.github.xiaocihua.stacktonearbychests.gui.ModOptionsGui;
 import io.github.xiaocihua.stacktonearbychests.gui.ModOptionsScreen;
 import io.github.xiaocihua.stacktonearbychests.gui.PosUpdatableButtonWidget;
@@ -22,13 +23,12 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.bus.api.SubscribeEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -36,13 +36,23 @@ import java.util.Optional;
 
 import static java.util.function.Predicate.not;
 
-@Mod(value = ModOptions.MOD_ID, dist = Dist.CLIENT)
+/**
+ * Classe principale du mod.
+ *
+ * Règles NeoForge importantes :
+ * - @Mod ne prend PAS de paramètre dist
+ * - FMLClientSetupEvent → MOD bus (via IEventBus injecté dans le constructeur)
+ * - Événements de jeu (screen, tick…) → NeoForge.EVENT_BUS
+ * - ModList.get() disponible seulement après FMLClientSetupEvent
+ */
+@Mod(ModOptions.MOD_ID)
 public class StackToNearbyChests {
 
     public static final Logger LOGGER = LogManager.getLogger("StackToNearbyChests");
 
-    public static final boolean IS_IPN_MOD_LOADED = ModList.get().isLoaded("inventoryprofilesnext");
-    public static final boolean IS_EASY_SHULKER_BOXES_MOD_LOADED = ModList.get().isLoaded("easyshulkerboxes");
+    // Initialisés dans onClientSetup, pas au chargement de la classe
+    public static boolean IS_IPN_MOD_LOADED                = false;
+    public static boolean IS_EASY_SHULKER_BOXES_MOD_LOADED = false;
 
     public record Vec2i(int x, int y) {}
 
@@ -51,244 +61,202 @@ public class StackToNearbyChests {
 
     public static Optional<PosUpdatableButtonWidget> currentStackToNearbyContainersButton = Optional.empty();
 
-    public StackToNearbyChests() {
-        // IMPORTANT : aucune logique client ici
-        EndWorldTickExecutor.init();
-        ForEachContainerTask.init();
-
-        NeoForge.EVENT_BUS.register(this);
+    /**
+     * NeoForge injecte automatiquement l'IEventBus du mod dans le constructeur.
+     */
+    public StackToNearbyChests(IEventBus modEventBus) {
+        // FMLClientSetupEvent est un événement de cycle de vie → MOD bus
+        modEventBus.addListener(this::onClientSetup);
     }
 
-    // -------------------------------------------------------------------------
-    // CLIENT SETUP — tout le code client doit être ici
-    // -------------------------------------------------------------------------
-    @SubscribeEvent
-    public void onClientSetup(FMLClientSetupEvent event) {
+    // ── Setup client (MOD bus) ────────────────────────────────────────────────────
+
+    private void onClientSetup(FMLClientSetupEvent event) {
         event.enqueueWork(() -> {
+            // ModList disponible ici
+            IS_IPN_MOD_LOADED                = ModList.get().isLoaded("inventoryprofilesnext");
+            IS_EASY_SHULKER_BOXES_MOD_LOADED = ModList.get().isLoaded("easyshulkerboxes");
+
+            // Systèmes du mod
             KeySequence.init();
             LockedSlots.init();
             InventoryActions.init();
+            EndWorldTickExecutor.init();
+            ForEachContainerTask.init();
 
+            // Événements de jeu → NeoForge.EVENT_BUS
+            NeoForge.EVENT_BUS.addListener(StackToNearbyChests::onScreenInit);
+
+            // Raccourcis clavier globaux
             ModOptions.get().keymap.stackToNearbyContainersKey
                     .registerNotOnScreen(InventoryActions::stackToNearbyContainers);
-
             ModOptions.get().keymap.restockFromNearbyContainersKey
                     .registerNotOnScreen(InventoryActions::restockFromNearbyContainers);
-
             ModOptions.get().keymap.openModOptionsScreenKey
                     .registerNotOnScreen(() ->
                             Minecraft.getInstance().setScreen(new ModOptionsScreen(new ModOptionsGui())));
+
+            // Écran de config dans le menu Mods NeoForge
+            ModConfigScreenFactory.register();
         });
     }
 
-    // -------------------------------------------------------------------------
-    // SCREEN INIT — remplace ScreenEvents.AFTER_INIT
-    // -------------------------------------------------------------------------
-    @SubscribeEvent
-    public void onScreenInit(ScreenEvent.Init.Post event) {
-        addButtonsAndKeys(event);
-    }
+    // ── Événements de jeu (NeoForge.EVENT_BUS) ───────────────────────────────────
 
-    // -------------------------------------------------------------------------
-    // LOGIQUE D’AJOUT DES BOUTONS
-    // -------------------------------------------------------------------------
-    private void addButtonsAndKeys(ScreenEvent.Init.Post event) {
+    private static void onScreenInit(ScreenEvent.Init.Post event) {
         Screen screen = event.getScreen();
         Minecraft client = Minecraft.getInstance();
         LocalPlayer player = client.player;
 
         if (player == null || player.isSpectator()) return;
 
-        ModOptions.Appearance appearanceOption = ModOptions.get().appearance;
-        boolean showButtonTooltip = appearanceOption.showButtonTooltip.booleanValue();
+        ModOptions.Appearance app = ModOptions.get().appearance;
+        boolean showTooltip = app.showButtonTooltip.booleanValue();
 
         if (screen instanceof InventoryScreen || screen instanceof CreativeModeInventoryScreen) {
-
-            if (appearanceOption.showTheButtonsOnTheCreativeInventoryScreen.booleanValue()) {
-                addButtonsOnInventoryScreen((AbstractContainerScreen<?>) screen, showButtonTooltip, appearanceOption);
+            if (app.showTheButtonsOnTheCreativeInventoryScreen.booleanValue()) {
+                addButtonsOnInventoryScreen((AbstractContainerScreen<?>) screen, showTooltip, app);
             }
 
-            NeoForge.EVENT_BUS.addListener((ScreenEvent.KeyPressed.Post keyEvent) -> {
-                if (keyEvent.getScreen() != screen) return;
+            NeoForge.EVENT_BUS.addListener((ScreenEvent.KeyPressed.Post e) -> {
+                if (e.getScreen() != screen) return;
                 if (isTextFieldActive(screen) || isInventoryTabNotSelected(screen)) return;
 
-                ModOptions.Keymap keymap = ModOptions.get().keymap;
+                ModOptions.Keymap km = ModOptions.get().keymap;
                 boolean triggered = false;
-
-                Slot focusedSlot = ((HandledScreenAccessor) screen).getFocusedSlot();
-                if (focusedSlot != null && focusedSlot.hasItem()) {
-                    triggered = keymap.quickStackItemsOfTheSameTypeAsTheOneUnderTheCursorToNearbyContainersKey
-                            .testThenRun(() -> InventoryActions.stackToNearbyContainers(focusedSlot.getItem().getItem()));
+                Slot focused = ((HandledScreenAccessor) screen).getFocusedSlot();
+                if (focused != null && focused.hasItem()) {
+                    triggered = km.quickStackItemsOfTheSameTypeAsTheOneUnderTheCursorToNearbyContainersKey
+                            .testThenRun(() -> InventoryActions.stackToNearbyContainers(focused.getItem().getItem()));
                 }
-
-                if (!triggered) {
-                    keymap.stackToNearbyContainersKey.testThenRun(InventoryActions::stackToNearbyContainers);
-                }
-
-                keymap.restockFromNearbyContainersKey.testThenRun(InventoryActions::restockFromNearbyContainers);
+                if (!triggered) km.stackToNearbyContainersKey.testThenRun(InventoryActions::stackToNearbyContainers);
+                km.restockFromNearbyContainersKey.testThenRun(InventoryActions::restockFromNearbyContainers);
             });
 
         } else if (isContainerScreen(screen)) {
             AbstractContainerMenu menu = ((AbstractContainerScreen<?>) screen).getMenu();
 
-            if (ModOptions.get().appearance.showQuickStackButton.booleanValue()) {
+            if (app.showQuickStackButton.booleanValue()) {
                 new PosUpdatableButtonWidget.Builder((AbstractContainerScreen<?>) screen)
                         .setTextures(getButtonSprites("quick_stack_button"))
-                        .setTooltip(showButtonTooltip
-                                ? Component.translatable("stacktonearbychests.tooltip.quickStackButton") : null)
-                        .setPosUpdater(parent -> getAbsolutePos(
-                                (HandledScreenAccessor) parent,
-                                appearanceOption.quickStackButtonPosX,
-                                appearanceOption.quickStackButtonPosY))
-                        .setPressAction(button -> InventoryActions.quickStack(menu))
+                        .setTooltip(showTooltip ? Component.translatable("stacktonearbychests.tooltip.quickStackButton") : null)
+                        .setPosUpdater(p -> getAbsolutePos((HandledScreenAccessor) p, app.quickStackButtonPosX, app.quickStackButtonPosY))
+                        .setPressAction(b -> InventoryActions.quickStack(menu))
                         .build();
             }
 
-            if (ModOptions.get().appearance.showRestockButton.booleanValue()) {
+            if (app.showRestockButton.booleanValue()) {
                 new PosUpdatableButtonWidget.Builder((AbstractContainerScreen<?>) screen)
                         .setTextures(getButtonSprites("restock_button"))
-                        .setTooltip(showButtonTooltip
-                                ? Component.translatable("stacktonearbychests.tooltip.restockButton") : null)
-                        .setPosUpdater(parent -> getAbsolutePos(
-                                (HandledScreenAccessor) parent,
-                                appearanceOption.restockButtonPosX,
-                                appearanceOption.restockButtonPosY))
-                        .setPressAction(button -> InventoryActions.restock(menu))
+                        .setTooltip(showTooltip ? Component.translatable("stacktonearbychests.tooltip.restockButton") : null)
+                        .setPosUpdater(p -> getAbsolutePos((HandledScreenAccessor) p, app.restockButtonPosX, app.restockButtonPosY))
+                        .setPressAction(b -> InventoryActions.restock(menu))
                         .build();
             }
 
-            NeoForge.EVENT_BUS.addListener((ScreenEvent.KeyPressed.Post keyEvent) -> {
-                if (keyEvent.getScreen() != screen) return;
+            NeoForge.EVENT_BUS.addListener((ScreenEvent.KeyPressed.Post e) -> {
+                if (e.getScreen() != screen) return;
                 if (isTextFieldActive(screen) || isInventoryTabNotSelected(screen)) return;
-
                 ModOptions.get().keymap.quickStackKey.testThenRun(() -> InventoryActions.quickStack(menu));
                 ModOptions.get().keymap.restockKey.testThenRun(() -> InventoryActions.restock(menu));
             });
         }
     }
 
-    // -------------------------------------------------------------------------
-    // BOUTONS INVENTAIRE
-    // -------------------------------------------------------------------------
-    private static void addButtonsOnInventoryScreen(
-            AbstractContainerScreen<?> screen,
-            boolean showButtonTooltip,
-            ModOptions.Appearance appearanceOption) {
-
-        if (ModOptions.get().appearance.showStackToNearbyContainersButton.booleanValue()) {
-            var buttonWidget = new PosUpdatableButtonWidget.Builder(screen)
+    private static void addButtonsOnInventoryScreen(AbstractContainerScreen<?> screen,
+                                                    boolean showTooltip,
+                                                    ModOptions.Appearance app) {
+        if (app.showStackToNearbyContainersButton.booleanValue()) {
+            var btn = new PosUpdatableButtonWidget.Builder(screen)
                     .setTextures(getButtonSprites("quick_stack_to_nearby_containers_button"))
-                    .setTooltip(showButtonTooltip
-                            ? getTooltipWithHint("stacktonearbychests.tooltip.stackToNearbyContainersButton") : null)
-                    .setPosUpdater(parent -> new Vec2i(
-                            parent.getX() + appearanceOption.stackToNearbyContainersButtonPosX.intValue(),
-                            parent.getY() + appearanceOption.stackToNearbyContainersButtonPosY.intValue()))
-                    .setPressAction(button -> {
+                    .setTooltip(showTooltip ? getTooltipWithHint("stacktonearbychests.tooltip.stackToNearbyContainersButton") : null)
+                    .setPosUpdater(p -> new Vec2i(
+                            p.getX() + app.stackToNearbyContainersButtonPosX.intValue(),
+                            p.getY() + app.stackToNearbyContainersButtonPosY.intValue()))
+                    .setPressAction(b -> {
                         AbstractContainerMenu menu = screen.getMenu();
-                        ItemStack cursorStack = menu.getCarried();
-                        if (cursorStack.isEmpty()) {
+                        ItemStack cursor = menu.getCarried();
+                        if (cursor.isEmpty()) {
                             InventoryActions.stackToNearbyContainers();
                         } else {
-                            Item item = cursorStack.getItem();
-
+                            Item item = cursor.getItem();
                             menu.slots.stream()
-                                    .filter(slot -> slot.container instanceof Inventory)
-                                    .filter(slot -> slot.getContainerSlot() < 36)
+                                    .filter(s -> s.container instanceof Inventory)
+                                    .filter(s -> s.getContainerSlot() < 36)
                                     .filter(not(LockedSlots::isLocked))
-                                    .filter(slot -> !slot.hasItem() || InventoryActions.canMerge(slot.getItem(), cursorStack))
-                                    .peek(slot -> InventoryActions.pickup(menu, slot))
-                                    .anyMatch(slot -> cursorStack.isEmpty());
-
+                                    .filter(s -> !s.hasItem() || InventoryActions.canMerge(s.getItem(), cursor))
+                                    .peek(s -> InventoryActions.pickup(menu, s))
+                                    .anyMatch(s -> cursor.isEmpty());
                             InventoryActions.stackToNearbyContainers(item);
                         }
                     })
                     .build();
 
-            currentStackToNearbyContainersButton = Optional.ofNullable(buttonWidget);
-
-            NeoForge.EVENT_BUS.addListener((ScreenEvent.Closing closeEvent) -> {
-                if (closeEvent.getScreen() == screen) {
-                    currentStackToNearbyContainersButton = Optional.empty();
-                }
+            currentStackToNearbyContainersButton = Optional.ofNullable(btn);
+            NeoForge.EVENT_BUS.addListener((ScreenEvent.Closing e) -> {
+                if (e.getScreen() == screen) currentStackToNearbyContainersButton = Optional.empty();
             });
         }
 
-        if (ModOptions.get().appearance.showRestockFromNearbyContainersButton.booleanValue()) {
+        if (app.showRestockFromNearbyContainersButton.booleanValue()) {
             new PosUpdatableButtonWidget.Builder(screen)
                     .setTextures(getButtonSprites("restock_from_nearby_containers_button"))
-                    .setTooltip(showButtonTooltip
-                            ? getTooltipWithHint("stacktonearbychests.tooltip.restockFromNearbyContainersButton") : null)
-                    .setPosUpdater(parent -> new Vec2i(
-                            parent.getX() + appearanceOption.restockFromNearbyContainersButtonPosX.intValue(),
-                            parent.getY() + appearanceOption.restockFromNearbyContainersButtonPosY.intValue()))
-                    .setPressAction(button -> InventoryActions.restockFromNearbyContainers())
+                    .setTooltip(showTooltip ? getTooltipWithHint("stacktonearbychests.tooltip.restockFromNearbyContainersButton") : null)
+                    .setPosUpdater(p -> new Vec2i(
+                            p.getX() + app.restockFromNearbyContainersButtonPosX.intValue(),
+                            p.getY() + app.restockFromNearbyContainersButtonPosY.intValue()))
+                    .setPressAction(b -> InventoryActions.restockFromNearbyContainers())
                     .build();
         }
     }
 
-    // -------------------------------------------------------------------------
-    // HELPERS
-    // -------------------------------------------------------------------------
+    // ── Helpers ──────────────────────────────────────────────────────────────────
+
     private static WidgetSprites getButtonSprites(String name) {
-        ResourceLocation normal = BUTTON_TEXTURES.withSuffix(name + ".png");
-        ResourceLocation hover  = BUTTON_TEXTURES.withSuffix(name + "_highlighted.png");
-        return new WidgetSprites(normal, hover);
+        return new WidgetSprites(
+                BUTTON_TEXTURES.withSuffix(name + ".png"),
+                BUTTON_TEXTURES.withSuffix(name + "_highlighted.png"));
     }
 
     private static boolean isTextFieldActive(Screen screen) {
         var focused = screen.getFocused();
-
-        if (focused instanceof RecipeBookComponent recipeBook) {
-            EditBox searchField = ((RecipeBookWidgetAccessor) recipeBook).getSearchField();
-            if (searchField != null && searchField.isActive())
-                return true;
+        if (focused instanceof RecipeBookComponent rb) {
+            EditBox sf = ((RecipeBookWidgetAccessor) rb).getSearchField();
+            if (sf != null && sf.isActive()) return true;
         }
-
-        return focused instanceof EditBox editBox && editBox.isActive();
+        return focused instanceof EditBox eb && eb.isActive();
     }
 
     private static boolean isInventoryTabNotSelected(Screen screen) {
-        return screen instanceof CreativeModeInventoryScreen creative
-                && !creative.isInventoryOpen();
+        return screen instanceof CreativeModeInventoryScreen c && !c.isInventoryOpen();
     }
 
-    public static Vec2i getAbsolutePos(HandledScreenAccessor parent, ModOptions.IntOption x, ModOptions.IntOption y) {
+    public static Vec2i getAbsolutePos(HandledScreenAccessor p, ModOptions.IntOption x, ModOptions.IntOption y) {
         return new Vec2i(
-                parent.getX() + parent.getBackgroundWidth() + x.intValue(),
-                parent.getY() + parent.getBackgroundHeight() / 2 + y.intValue());
+                p.getX() + p.getBackgroundWidth()      + x.intValue(),
+                p.getY() + p.getBackgroundHeight() / 2 + y.intValue());
     }
 
-    private static Component getTooltipWithHint(String translationKey) {
-        return Component.translatable(translationKey)
+    private static Component getTooltipWithHint(String key) {
+        return Component.translatable(key)
                 .append("\n")
                 .append(Component.translatable("stacktonearbychests.tooltip.hint")
-                        .setStyle(Style.EMPTY.withItalic(true)
-                                .withColor(net.minecraft.ChatFormatting.DARK_GRAY)));
+                        .setStyle(Style.EMPTY.withItalic(true).withColor(net.minecraft.ChatFormatting.DARK_GRAY)));
     }
 
     public static boolean isContainerScreen(Screen screen) {
-        if (!(screen instanceof AbstractContainerScreen<?>))
-            return false;
-
-        if (screen instanceof BeaconScreen
-                || screen instanceof GrindstoneScreen
-                || screen instanceof CartographyTableScreen
-                || screen instanceof CraftingScreen
-                || screen instanceof LoomScreen
-                || screen instanceof EnchantmentScreen
-                || screen instanceof MerchantScreen
-                || screen instanceof AbstractFurnaceScreen<?>
-                || screen instanceof StonecutterScreen
-                || screen instanceof InventoryScreen
+        if (!(screen instanceof AbstractContainerScreen<?>)) return false;
+        if (screen instanceof BeaconScreen || screen instanceof GrindstoneScreen
+                || screen instanceof CartographyTableScreen || screen instanceof CraftingScreen
+                || screen instanceof LoomScreen || screen instanceof EnchantmentScreen
+                || screen instanceof MerchantScreen || screen instanceof AbstractFurnaceScreen<?>
+                || screen instanceof StonecutterScreen || screen instanceof InventoryScreen
                 || screen instanceof CreativeModeInventoryScreen) {
             return false;
         }
-
-        if (screen instanceof HorseInventoryScreen mountScreen){
-            return ((MountScreenAccessor) mountScreen).getMount() instanceof AbstractChestedHorse horse
-                    && horse.hasChest();
+        if (screen instanceof HorseInventoryScreen hs) {
+            return ((MountScreenAccessor) hs).getMount() instanceof AbstractChestedHorse h && h.hasChest();
         }
-
         return true;
     }
 }

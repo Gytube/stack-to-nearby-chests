@@ -11,7 +11,6 @@ import net.minecraft.world.entity.animal.horse.AbstractChestedHorse;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.Collection;
@@ -25,7 +24,6 @@ public class ForEachEntityContainerTask extends ForEachContainerTask {
     private final MultiPlayerGameMode interactionManager;
     private final double squaredReachDistance;
     private final Entity cameraEntity;
-
     private final Iterator<Entity> entities;
 
     public ForEachEntityContainerTask(Minecraft client,
@@ -42,9 +40,7 @@ public class ForEachEntityContainerTask extends ForEachContainerTask {
         this.cameraEntity = cameraEntity;
 
         Vec3 eyePos = cameraEntity.getEyePosition(0);
-
-        // Remplace EntityPredicates.VALID_INVENTORIES + RideableInventory + Registries → BuiltInRegistries
-        Iterator<Entity> allEntities = world.getEntities(
+        this.entities = world.getEntities(
                 cameraEntity,
                 getBox(eyePos, reachDistance),
                 entity -> !(entity instanceof Player)
@@ -52,8 +48,6 @@ public class ForEachEntityContainerTask extends ForEachContainerTask {
                         && filter.contains(BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString())
                         && (!(entity instanceof AbstractChestedHorse horse) || horse.hasChest())
         ).iterator();
-
-        this.entities = allEntities;
     }
 
     @Override
@@ -62,7 +56,7 @@ public class ForEachEntityContainerTask extends ForEachContainerTask {
             super.stop();
             return;
         }
-        // Remplace client.options.sneakKey.setPressed(true)
+        // ✅ fix: keySneak est le nom Mojang de la touche sneak dans Options
         client.options.keyShift.setDown(true);
         EndWorldTickExecutor.execute(super::start);
     }
@@ -79,15 +73,12 @@ public class ForEachEntityContainerTask extends ForEachContainerTask {
 
         while (entities.hasNext()) {
             Entity entity = entities.next();
-
             if (entity.distanceToSqr(eyePos) > squaredReachDistance) continue;
 
-            // Remplace interactionManager.interactEntity → interactAt
-            interactionManager.interactAt(player, entity, new EntityHitResult(entity), InteractionHand.MAIN_HAND);
-
+            // Mojang mappings : interact(Player, Entity, InteractionHand)
+            interactionManager.interact(player, entity, InteractionHand.MAIN_HAND);
             return true;
         }
-
         return false;
     }
 }

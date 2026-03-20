@@ -2,6 +2,9 @@ modLoader = "javafml"
 loaderVersion = "${loader_version_range}"
 license = "LGPL-3.0"
 
+# PAS de [[mixins]] ici — enregistrement via IMixinConnector
+# pour éviter l'interférence de Sinytra Connector
+
 [[mods]]
     modId = "stacktonearbychests"
     version = "${version}"
@@ -10,16 +13,12 @@ license = "LGPL-3.0"
 A client-side ONLY mod, adds the quick stacking and restocking features from Terraria into Minecraft.
 '''
     logoFile = "assets/stacktonearbychests/icon.png"
-
-    [[mods.authors]]
-        name = "xiaocihua"
+    authors = "xiaocihua"
 
     [mods.contact]
         homepage = "https://github.com/xiaocihua"
         sources  = "https://github.com/xiaocihua/stack-to-nearby-chests"
         issues   = "https://github.com/xiaocihua/stack-to-nearby-chests/issues"
-
-# ── Dépendances ────────────────────────────────────────────────────────────────
 
 [[dependencies.stacktonearbychests]]
     modId      = "neoforge"
@@ -34,8 +33,6 @@ A client-side ONLY mod, adds the quick stacking and restocking features from Ter
     versionRange = "${minecraft_version_range}"
     ordering   = "NONE"
     side       = "CLIENT"
-
-# ── Dépendances optionnelles ───────────────────────────────────────────────────
 
 [[dependencies.stacktonearbychests]]
     modId      = "emi"

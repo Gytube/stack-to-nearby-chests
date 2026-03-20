@@ -16,15 +16,8 @@ java {
 }
 
 repositories {
-    // REI & Cloth Config
-    maven {
-        url = "https://maven.shedaniel.me/"
-    }
-    // EMI
-    maven {
-        url = "https://maven.terraformersmc.com/releases/"
-    }
-    // Fallback
+    maven { url = "https://maven.shedaniel.me/" }
+    maven { url = "https://maven.terraformersmc.com/releases/" }
     mavenCentral()
 }
 
@@ -55,15 +48,9 @@ neoForge {
 }
 
 dependencies {
-    // EMI - NeoForge variant
     compileOnly "dev.emi:emi-neoforge:${project.emi_version}:api"
-    // localRuntime "dev.emi:emi-neoforge:${project.emi_version}"
-
-    // REI - NeoForge variant
     compileOnly "me.shedaniel.cloth:basic-math:+"
-    // localRuntime "me.shedaniel:RoughlyEnoughItems-neoforge:${project.rei_version}"
 }
-
 
 tasks.withType(JavaCompile).configureEach {
     it.options.release = 21
@@ -76,12 +63,15 @@ jar {
 
     manifest {
         attributes([
-            'Specification-Title'     : project.mod_id,
-            'Specification-Vendor'    : project.maven_group,
-            'Specification-Version'   : '1',
-            'Implementation-Title'    : project.name,
-            'Implementation-Version'  : project.jar.archiveVersion,
-            'Implementation-Vendor'   : project.maven_group,
+            'Specification-Title'      : project.mod_id,
+            'Specification-Vendor'     : project.maven_group,
+            'Specification-Version'    : '1',
+            'Implementation-Title'     : project.name,
+            'Implementation-Version'   : project.jar.archiveVersion,
+            'Implementation-Vendor'    : project.maven_group,
+            // ✅ Déclare les mixins directement dans le manifeste JAR
+            // Traité par Mixin avant Sinytra Connector
+            'MixinConfigs'             : 'stacktonearbychests.mixins.json',
         ])
     }
 }
@@ -109,7 +99,5 @@ publishing {
             from components.java
         }
     }
-    repositories {
-        // Add publishing repositories here if needed
-    }
+    repositories {}
 }

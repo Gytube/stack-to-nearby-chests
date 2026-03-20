@@ -4,6 +4,7 @@ import io.github.xiaocihua.stacktonearbychests.event.OnKeyEvent;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionResult;
 import net.neoforged.neoforge.common.NeoForge;

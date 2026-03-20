@@ -18,13 +18,14 @@ public class EntityContainerEntry extends SelectableEntryList.Entry<ResourceLoca
                 .orElse(Component.literal(id.toString()));
     }
 
+    // ✅ fix: PAS de super.render()
     @Override
     public void render(GuiGraphics graphics, int x, int y, int mouseX, int mouseY) {
-        this.render(graphics, x, y, mouseX, mouseY);
         var font      = Minecraft.getInstance().font;
         int inset     = 6;
         int fontWidth = font.width(name);
-        int fontY     = y + (height - font.lineHeight) / 2;
-        graphics.drawString(font, name, x + width - inset - fontWidth, fontY, ModOptionsGui.TEXT_COLOR, false);
+        graphics.drawString(font, name,
+                x + width - inset - fontWidth, y + (height - font.lineHeight) / 2,
+                ModOptionsGui.TEXT_COLOR, false);
     }
 }

@@ -23,22 +23,22 @@ public class BlockContainerEntry extends SelectableEntryList.Entry<ResourceLocat
         name  = block.<Component>map(Block::getName).orElse(Component.literal(id.toString()));
     }
 
+    // ✅ fix: PAS de super.render() — la méthode parente est abstraite.
+    // Le fond de sélection est dessiné par SelectableEntryList.Entry.render() (la méthode final)
+    // avant d'appeler cette méthode-ci.
     @Override
     public void render(GuiGraphics graphics, int x, int y, int mouseX, int mouseY) {
-        this.render(graphics, x, y, mouseX, mouseY);
-        var font   = Minecraft.getInstance().font;
-        int inset  = 6;
+        var font     = Minecraft.getInstance().font;
+        int inset    = 6;
         int iconSize = 16;
 
-        // Icône de l'item correspondant au bloc
         block.ifPresent(b -> graphics.renderItem(
                 new net.minecraft.world.item.ItemStack(b.asItem()),
-                x + inset,
-                y + (height - iconSize) / 2));
+                x + inset, y + (height - iconSize) / 2));
 
-        // Nom
         int fontWidth = font.width(name);
-        int fontY     = y + (height - font.lineHeight) / 2;
-        graphics.drawString(font, name, x + width - inset - fontWidth, fontY, ModOptionsGui.TEXT_COLOR, false);
+        graphics.drawString(font, name,
+                x + width - inset - fontWidth, y + (height - font.lineHeight) / 2,
+                ModOptionsGui.TEXT_COLOR, false);
     }
 }

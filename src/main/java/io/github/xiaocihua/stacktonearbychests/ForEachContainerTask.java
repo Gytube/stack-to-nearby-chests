@@ -18,7 +18,6 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
-
 public abstract class ForEachContainerTask {
 
     private static final ScheduledThreadPoolExecutor TIMER = new ScheduledThreadPoolExecutor(1);
@@ -51,7 +50,7 @@ public abstract class ForEachContainerTask {
                     return;
                 }
                 event.setResult(InteractionResult.FAIL);
-                event.deny();
+                event.setCanceled(true);
             }
         });
 
